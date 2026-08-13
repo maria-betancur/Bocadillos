@@ -11,6 +11,10 @@
 <link href="https://cdn.jsdelivr.net/fontsource/fonts/poppins@latest/latin-800-normal.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/fontsource/fonts/poppins@latest/latin-900-normal.css" rel="stylesheet">
 
+<!-- 🔥 FIREBASE SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
 <style>
 :root {
     --primary: #16a34a; --primary-dark: #128a40; --primary-glow: rgba(22,163,74,.4);
@@ -187,6 +191,11 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 .toast.danger { border-left-color: var(--danger); }
 .toast.warning { border-left-color: var(--warning); }
 
+.upload-progress { background: #f1f5f9; border-radius: 10px; padding: 10px; margin-top: 10px; display: none; }
+.upload-progress.active { display: block; }
+.progress-bar { background: #e2e8f0; border-radius: 10px; height: 8px; overflow: hidden; margin-top: 5px; }
+.progress-fill { background: linear-gradient(90deg, var(--primary), var(--accent)); height: 100%; width: 0%; transition: width 0.3s; }
+
 .btn-action { padding: 6px 10px; border: none; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; margin: 0 2px; }
 .btn-action.edit { background: var(--warning); color: white; }
 .btn-action.delete { background: var(--danger); color: white; }
@@ -215,6 +224,10 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 .detail-info-box { background: var(--gray-light); padding: 10px; border-radius: 10px; }
 .detail-info-box .label { font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 700; }
 .detail-info-box .value { font-size: 14px; font-weight: 700; color: var(--text-dark); margin-top: 3px; }
+
+.status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+.status-pill.on { background: #d1fae5; color: #065f46; }
+.status-pill.off { background: #fee2e2; color: #991b1b; }
 
 @media (min-width: 768px) { .container { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } }
 
@@ -321,9 +334,15 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
         <div class="form-group">
             <label>🖼️ Imágenes del Producto</label>
             <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:10px; margin-bottom:10px; font-size:12px; color:#166534;">
-                💡 Sube varias fotos del producto o pega URLs. La primera imagen será la principal. Las fotos se guardan en este dispositivo.
+                💡 Sube varias fotos del producto o pega URLs. La primera imagen será la principal. Si ImgBB está configurado, las fotos se suben allí automáticamente.
             </div>
             <input type="file" id="editFileImg" accept="image/*" multiple onchange="procesarArchivosImagen(this, 'edit')" style="padding:8px; border:1px solid var(--gray-border); border-radius:8px; width:100%; margin-bottom:8px;">
+
+            <div class="upload-progress" id="editUploadProgress">
+                <div style="font-size:12px; font-weight:600;">📤 Subiendo imágenes a ImgBB...</div>
+                <div class="progress-bar"><div class="progress-fill" id="editProgressFill"></div></div>
+                <div style="font-size:11px; color:#64748b; margin-top:5px;" id="editUploadStatus">Preparando...</div>
+            </div>
 
             <div style="margin-top:8px; font-size:12px; color:#64748b;">O pega URLs separadas por coma:</div>
             <input type="text" id="editUrl" placeholder="https://img1.jpg, https://img2.jpg" style="margin-top:5px;">
@@ -344,7 +363,9 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
         <div class="admin-sidebar">
             <h3 style="color:var(--primary); margin:0 0 20px 0;">🥨 DEGUSTASE ADMIN</h3>
             <div class="admin-nav-menu">
-                <button class="admin-nav-item active" onclick="switchTab('tab-personalizacion', this)">🎨 Personalización</button>
+                <button class="admin-nav-item active" onclick="switchTab('tab-config', this)">⚙️ Configuración API</button>
+                <button class="admin-nav-item" onclick="switchTab('tab-sincronizacion', this)">☁️ Sincronización</button>
+                <button class="admin-nav-item" onclick="switchTab('tab-personalizacion', this)">🎨 Personalización</button>
                 <button class="admin-nav-item" onclick="switchTab('tab-nuevo', this)">➕ Nuevo Producto</button>
                 <button class="admin-nav-item" onclick="switchTab('tab-catalogo', this)">📊 Catálogo</button>
                 <button class="admin-nav-item" onclick="switchTab('tab-categorias', this)">🏷️ Categorías</button>
@@ -354,11 +375,62 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 
         <div style="display:flex; flex-direction:column; overflow:hidden;">
             <div style="background:white; padding:15px 20px; border-bottom:1px solid var(--gray-border);">
-                <h2 style="margin:0; font-size:18px;" id="adminSectionTitle">Personalización</h2>
+                <h2 style="margin:0; font-size:18px;" id="adminSectionTitle">Configuración API</h2>
             </div>
             <div class="admin-body">
 
-                <div id="tab-personalizacion" class="admin-view active">
+                <div id="tab-config" class="admin-view active">
+                    <div class="dashboard-card">
+                        <h4>🔥 Firebase (Base de Datos en Tiempo Real)</h4>
+                        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
+                            Para que el catálogo, los textos y colores se vean <strong>al instante en todos los dispositivos</strong>, ingresa la API Key y la Database URL de tu proyecto de Firebase.
+                        </p>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="text" id="cfgFirebaseApiKey" placeholder="AIzaSy...">
+                        </div>
+                        <div class="form-group">
+                            <label>Database URL</label>
+                            <input type="text" id="cfgFirebaseUrl" placeholder="https://tu-proyecto-default-rtdb.firebaseio.com">
+                        </div>
+                        <button class="sync-btn primary" onclick="guardarConfigFirebase()">💾 Guardar y Conectar</button>
+                        <div id="firebaseStatus" style="margin-top:10px; font-size:12px;"></div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <h4>🖼️ ImgBB (Subida de Imágenes)</h4>
+                        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
+                            Obtén tu API Key gratis en <a href="https://api.imgbb.com" target="_blank" style="color:var(--primary);">api.imgbb.com</a>. Si no la configuras, las fotos se guardan comprimidas en este dispositivo.
+                        </p>
+                        <div class="form-group">
+                            <label>API Key de ImgBB</label>
+                            <input type="text" id="cfgImgbbKey" placeholder="6d207e02198a847aa98d0a2a901485a5">
+                        </div>
+                        <button class="sync-btn primary" onclick="guardarConfigImgBB()">💾 Guardar ImgBB</button>
+                        <div id="imgbbStatus" style="margin-top:10px; font-size:12px;"></div>
+                    </div>
+                </div>
+
+                <div id="tab-sincronizacion" class="admin-view">
+                    <div class="dashboard-card">
+                        <h4>☁️ Estado de Conexión</h4>
+                        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+                            <span class="status-pill off" id="pillFirebase">🔥 Firebase: desconectado</span>
+                            <span class="status-pill off" id="pillImgbb">🖼️ ImgBB: sin configurar</span>
+                        </div>
+                        <div style="margin-top:5px; padding:12px; background:#f8fafc; border-radius:10px; font-size:12px;">
+                            <span id="statsInfo">Cargando...</span>
+                        </div>
+                    </div>
+                    <div class="dashboard-card">
+                        <h4>🔄 Acciones de Nube</h4>
+                        <button class="sync-btn primary" onclick="subirDatosANube()">⬆️ Subir catálogo a Firebase</button>
+                        <button class="sync-btn secondary" onclick="descargarDatosDeNube()">⬇️ Descargar catálogo de Firebase</button>
+                        <p style="font-size:11px; color:#64748b; margin:8px 0 0 0;">💡 Los cambios que hagas (productos, categorías, textos y colores) se suben automáticamente si Firebase está conectado.</p>
+                    </div>
+                </div>
+
+                <div id="tab-personalizacion" class="admin-view">
                     <div class="dashboard-card">
                         <h4>📝 Textos de la Tienda</h4>
                         <div class="form-group">
@@ -419,9 +491,15 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                         <div class="form-group">
                             <label>🖼️ Imágenes del Producto</label>
                             <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:12px; margin-bottom:10px; font-size:12px; color:#166534;">
-                                💡 <strong>Sube varias fotos</strong> del producto desde tu celular o pega URLs. Se guardan localmente, sin nube.
+                                💡 <strong>Sube varias fotos</strong> del producto desde tu celular o pega URLs. Con ImgBB configurado se suben automáticamente.
                             </div>
                             <input type="file" id="prodFileImg" accept="image/*" multiple onchange="procesarArchivosImagen(this, 'prod')" style="padding:10px; border:1px solid var(--gray-border); border-radius:8px; width:100%;">
+
+                            <div class="upload-progress" id="uploadProgress">
+                                <div style="font-size:12px; font-weight:600;">📤 Subiendo imágenes a ImgBB...</div>
+                                <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                                <div style="font-size:11px; color:#64748b; margin-top:5px;" id="uploadStatus">Preparando...</div>
+                            </div>
 
                             <div style="margin-top:10px; font-size:12px; color:#64748b;">O pega URLs directas separadas por coma:</div>
                             <input type="text" id="prodUrlImg" placeholder="https://img1.jpg, https://img2.jpg" style="margin-top:5px;">
@@ -477,7 +555,18 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 </div>
 
 <script>
-/* ================= 🧠 ESTADO Y DATOS LOCALES (SIN NUBE) ================= */
+/* ================= ⚙️ CONFIGURACIÓN DE APIS ================= */
+let savedFirebaseConfig = JSON.parse(localStorage.getItem('degustase_firebase') || 'null');
+let FIREBASE_CONFIG = {
+    apiKey: savedFirebaseConfig?.apiKey || '',
+    databaseURL: savedFirebaseConfig?.databaseURL || ''
+};
+let IMGBB_CONFIG = JSON.parse(localStorage.getItem('degustase_imgbb') || 'null') || { apiKey: '' };
+
+let db = null;
+let firebaseUnsubscribe = null;
+
+/* ================= 🧠 DATOS ================= */
 const TIENDA_DEFAULTS = {
     name: "DEGUSTASE",
     title: "¡Bienvenido a Degustase!",
@@ -518,9 +607,319 @@ function guardarLocal() {
         localStorage.setItem('degustase_tienda', JSON.stringify(tiendaConfig));
         return true;
     } catch (e) {
-        showToast("⚠️ Almacenamiento lleno: usa menos imágenes o imágenes más pequeñas", "danger");
+        showToast("⚠️ Almacenamiento local lleno", "danger");
         return false;
     }
+}
+
+/* ================= 🔥 FIREBASE ================= */
+function inicializarFirebaseRealtime() {
+    if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.databaseURL) {
+        if (firebaseUnsubscribe) { firebaseUnsubscribe(); firebaseUnsubscribe = null; }
+        actualizarPillsEstado();
+        return;
+    }
+    try {
+        if (!firebase.apps.length) {
+            firebase.initializeApp({
+                apiKey: FIREBASE_CONFIG.apiKey,
+                databaseURL: FIREBASE_CONFIG.databaseURL
+            });
+        }
+        db = firebase.database();
+        if (firebaseUnsubscribe) firebaseUnsubscribe();
+
+        const ref = db.ref('datos');
+        firebaseUnsubscribe = ref.on('value', (snapshot) => {
+            const datos = snapshot.val();
+            if (datos && datos.productos) {
+                const ultimaLocal = parseInt(localStorage.getItem('degustase_last_push') || '0');
+                if (datos.ultimaActualizacion && datos.ultimaActualizacion <= ultimaLocal) return;
+
+                productos = Array.isArray(datos.productos) ? datos.productos : Object.values(datos.productos);
+                productos.forEach(p => {
+                    if (!p.id) p.id = genId();
+                    if (!Array.isArray(p.imagenes)) p.imagenes = p.imagenes ? [p.imagenes] : [];
+                });
+                if (datos.categorias) categorias = Array.isArray(datos.categorias) ? datos.categorias : Object.values(datos.categorias);
+                if (datos.tiendaConfig) tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
+
+                guardarLocal();
+                prepararCacheBusqueda();
+                aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
+                syncTiendaUI();
+                poblarInputsPersonalizacion();
+                renderProductos();
+                renderSelectCategorias();
+                renderCategoriasAdmin();
+                renderNavCategorias();
+                actualizarEstadisticas();
+                if (document.getElementById('adminPanel').style.display === 'flex') {
+                    renderCatalogo();
+                }
+            }
+        }, (error) => {
+            console.error("Error de Firebase:", error);
+            showToast("❌ Error de Firebase: " + error.message, "danger");
+        });
+        actualizarPillsEstado();
+    } catch (error) {
+        console.error("Error inicializando Firebase:", error);
+        showToast("❌ " + error.message, "danger");
+        db = null;
+        actualizarPillsEstado();
+    }
+}
+
+async function subirDatosANube() {
+    if (!db) {
+        showToast("⚠️ Configura Firebase primero (pestaña Configuración API)", "warning");
+        return;
+    }
+    try {
+        showToast("📤 Subiendo a Firebase...", "success");
+        const ahora = Date.now();
+        localStorage.setItem('degustase_last_push', ahora.toString());
+        await db.ref('datos').set({
+            productos,
+            categorias,
+            tiendaConfig,
+            ultimaActualizacion: ahora
+        });
+        showToast("✅ Catálogo guardado en la nube", "success");
+        actualizarEstadisticas();
+    } catch (error) {
+        showToast("❌ Error: " + error.message, "danger");
+    }
+}
+
+async function descargarDatosDeNube() {
+    if (!db) {
+        showToast("⚠️ Configura Firebase primero", "warning");
+        return;
+    }
+    try {
+        showToast("📥 Descargando de Firebase...", "success");
+        const snapshot = await db.ref('datos').once('value');
+        const datos = snapshot.val();
+        if (datos && datos.productos) {
+            productos = Array.isArray(datos.productos) ? datos.productos : Object.values(datos.productos);
+            productos.forEach(p => {
+                if (!p.id) p.id = genId();
+                if (!Array.isArray(p.imagenes)) p.imagenes = p.imagenes ? [p.imagenes] : [];
+            });
+            if (datos.categorias) categorias = Array.isArray(datos.categorias) ? datos.categorias : Object.values(datos.categorias);
+            if (datos.tiendaConfig) tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
+
+            guardarLocal();
+            prepararCacheBusqueda();
+            aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
+            syncTiendaUI();
+            poblarInputsPersonalizacion();
+            renderProductos();
+            renderSelectCategorias();
+            renderCategoriasAdmin();
+            renderNavCategorias();
+            renderCatalogo();
+            actualizarEstadisticas();
+            showToast(`✅ ${productos.length} productos descargados`, "success");
+        } else {
+            showToast("ℹ️ No hay datos en Firebase aún", "warning");
+        }
+    } catch (error) {
+        showToast("❌ Error: " + error.message, "danger");
+    }
+}
+
+function guardarConfigFirebase() {
+    const apiKey = document.getElementById('cfgFirebaseApiKey').value.trim();
+    const url = document.getElementById('cfgFirebaseUrl').value.trim();
+    if (!apiKey || !url) {
+        showToast("⚠️ Ingresa la API Key y la Database URL", "warning");
+        return;
+    }
+    FIREBASE_CONFIG.apiKey = apiKey;
+    FIREBASE_CONFIG.databaseURL = url.replace(/\/$/, '');
+    localStorage.setItem('degustase_firebase', JSON.stringify(FIREBASE_CONFIG));
+    document.getElementById('firebaseStatus').innerHTML = '<span style="color:var(--success);">✅ Conectando a Firebase...</span>';
+    showToast("✅ Configuración guardada", "success");
+    inicializarFirebaseRealtime();
+}
+
+function guardarConfigImgBB() {
+    const key = document.getElementById('cfgImgbbKey').value.trim();
+    if (!key) {
+        showToast("⚠️ Ingresa tu API Key de ImgBB", "warning");
+        return;
+    }
+    IMGBB_CONFIG.apiKey = key;
+    localStorage.setItem('degustase_imgbb', JSON.stringify(IMGBB_CONFIG));
+    document.getElementById('imgbbStatus').innerHTML = '<span style="color:var(--success);">✅ ImgBB configurado</span>';
+    actualizarPillsEstado();
+    showToast("✅ ImgBB guardado", "success");
+}
+
+function actualizarPillsEstado() {
+    const pf = document.getElementById('pillFirebase');
+    const pi = document.getElementById('pillImgbb');
+    if (pf) {
+        if (db) { pf.className = 'status-pill on'; pf.textContent = '🔥 Firebase: conectado'; }
+        else { pf.className = 'status-pill off'; pf.textContent = '🔥 Firebase: desconectado'; }
+    }
+    if (pi) {
+        if (IMGBB_CONFIG.apiKey) { pi.className = 'status-pill on'; pi.textContent = '🖼️ ImgBB: configurado'; }
+        else { pi.className = 'status-pill off'; pi.textContent = '🖼️ ImgBB: sin configurar'; }
+    }
+}
+
+function actualizarEstadisticas() {
+    const size = new Blob([JSON.stringify(productos)]).size;
+    const totalImgs = productos.reduce((acc, p) => acc + ((p.imagenes && p.imagenes.length) || 0), 0);
+    const el = document.getElementById('statsInfo');
+    if (el) el.innerHTML = `📦 <strong>${productos.length}</strong> productos | 🖼️ <strong>${totalImgs}</strong> imágenes | 💾 <strong>${(size/1024).toFixed(1)} KB</strong> | ${db ? '☁️ Sincronizado' : '📴 Solo local'}`;
+}
+
+/* ================= 🖼️ IMÁGENES (IMGBB + RESPALDO LOCAL) ================= */
+async function subirUnaImagenImgBB(file, progressId, fillId, statusId, current, total) {
+    const progressDiv = document.getElementById(progressId);
+    const progressFill = document.getElementById(fillId);
+    const uploadStatus = document.getElementById(statusId);
+
+    if (progressDiv) progressDiv.classList.add('active');
+    if (progressFill) progressFill.style.width = Math.round((current / total) * 100) + '%';
+    if (uploadStatus) uploadStatus.textContent = `Subiendo imagen ${current} de ${total}: ${file.name}`;
+
+    const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+
+    const formData = new FormData();
+    formData.append('key', IMGBB_CONFIG.apiKey);
+    formData.append('image', base64);
+
+    const response = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: formData });
+    if (!response.ok) throw new Error('Error al subir a ImgBB');
+    const data = await response.json();
+    return data.data.display_url;
+}
+
+function comprimirImagenLocal(file) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            const MAX = 700;
+            let w = img.width, h = img.height;
+            if (w > MAX || h > MAX) {
+                const escala = Math.min(MAX / w, MAX / h);
+                w = Math.round(w * escala);
+                h = Math.round(h * escala);
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            URL.revokeObjectURL(url);
+            resolve(canvas.toDataURL('image/jpeg', 0.82));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Imagen inválida')); };
+        img.src = url;
+    });
+}
+
+async function procesarArchivosImagen(input, contexto) {
+    const files = Array.from(input.files || []);
+    if (files.length === 0) return;
+    const lista = contexto === 'prod' ? imagenesProductoTemp : imagenesEdicionTemp;
+    const renderFn = contexto === 'prod' ? renderListaImagenesProducto : renderListaImagenesEdicion;
+    const progressId = contexto === 'prod' ? 'uploadProgress' : 'editUploadProgress';
+    const fillId = contexto === 'prod' ? 'progressFill' : 'editProgressFill';
+    const statusId = contexto === 'prod' ? 'uploadStatus' : 'editUploadStatus';
+
+    let agregadas = 0;
+
+    if (IMGBB_CONFIG.apiKey) {
+        for (let i = 0; i < files.length; i++) {
+            try {
+                const url = await subirUnaImagenImgBB(files[i], progressId, fillId, statusId, i + 1, files.length);
+                lista.push(url);
+                agregadas++;
+            } catch (e) {
+                showToast("❌ " + e.message, "danger");
+            }
+        }
+        const progressDiv = document.getElementById(progressId);
+        const progressFill = document.getElementById(fillId);
+        if (progressFill) progressFill.style.width = '100%';
+        setTimeout(() => {
+            if (progressDiv) progressDiv.classList.remove('active');
+            if (progressFill) progressFill.style.width = '0%';
+        }, 1500);
+    } else {
+        showToast("ℹ️ Sin ImgBB: las fotos se guardan comprimidas en este dispositivo", "warning");
+        for (const f of files) {
+            try { lista.push(await comprimirImagenLocal(f)); agregadas++; } catch (e) { /* ignorar */ }
+        }
+    }
+
+    renderFn();
+    input.value = '';
+    if (agregadas > 0) showToast(`✅ ${agregadas} imagen(es) lista(s)`, "success");
+}
+
+function renderListaImagenesProducto() {
+    const cont = document.getElementById('prodImagesList');
+    if (!cont) return;
+    cont.innerHTML = '';
+    imagenesProductoTemp.forEach((url, idx) => {
+        const div = document.createElement('div');
+        div.className = 'image-item' + (idx === 0 ? ' main-img' : '');
+        div.innerHTML = `
+            <img src="${url}" alt="img-${idx}">
+            <button class="remove-img-btn" onclick="quitarImagenProducto(${idx})">✕</button>
+            <span class="img-index">${idx === 0 ? '👑 Principal' : '#' + (idx + 1)}</span>
+        `;
+        cont.appendChild(div);
+    });
+}
+function quitarImagenProducto(idx) {
+    imagenesProductoTemp.splice(idx, 1);
+    renderListaImagenesProducto();
+}
+
+function renderListaImagenesEdicion() {
+    const cont = document.getElementById('editImagesList');
+    if (!cont) return;
+    cont.innerHTML = '';
+    imagenesEdicionTemp.forEach((url, idx) => {
+        const div = document.createElement('div');
+        div.className = 'image-item' + (idx === 0 ? ' main-img' : '');
+        div.innerHTML = `
+            <img src="${url}" alt="img-${idx}">
+            <button class="remove-img-btn" onclick="quitarImagenEdicion(${idx})">✕</button>
+            <span class="img-index">${idx === 0 ? '👑 Principal' : '#' + (idx + 1)}</span>
+        `;
+        cont.appendChild(div);
+    });
+}
+function quitarImagenEdicion(idx) {
+    imagenesEdicionTemp.splice(idx, 1);
+    renderListaImagenesEdicion();
+}
+
+function agregarUrlsEdicion() {
+    const input = document.getElementById('editUrl');
+    const texto = input.value.trim();
+    if (!texto) { showToast("⚠️ Pega una o más URLs", "warning"); return; }
+    const nuevas = texto.split(/[,\n|]/).map(u => u.trim()).filter(u => u && u.startsWith('http'));
+    if (nuevas.length === 0) { showToast("⚠️ URLs no válidas", "warning"); return; }
+    nuevas.forEach(u => imagenesEdicionTemp.push(u));
+    renderListaImagenesEdicion();
+    input.value = '';
+    showToast(`✅ ${nuevas.length} URL(s) agregada(s)`, "success");
 }
 
 /* ================= 🎨 COLORES DINÁMICOS ================= */
@@ -584,7 +983,7 @@ function renderPresetsColores() {
     });
 }
 
-function guardarPersonalizacion() {
+async function guardarPersonalizacion() {
     tiendaConfig.name = document.getElementById('cfgNombreTienda').value.trim() || 'DEGUSTASE';
     tiendaConfig.title = document.getElementById('cfgTituloBanner').value.trim() || '¡Bienvenido!';
     tiendaConfig.desc = document.getElementById('cfgDescBanner').value.trim();
@@ -596,6 +995,7 @@ function guardarPersonalizacion() {
     syncTiendaUI();
     guardarLocal();
     showToast("✅ Personalización guardada", "success");
+    if (db) await subirDatosANube();
 }
 
 function restaurarPersonalizacion() {
@@ -612,6 +1012,7 @@ function restaurarPersonalizacion() {
     syncTiendaUI();
     guardarLocal();
     showToast("↩️ Valores restaurados", "warning");
+    if (db) subirDatosANube();
 }
 
 function poblarInputsPersonalizacion() {
@@ -653,101 +1054,6 @@ function prepararCacheBusqueda() {
 function obtenerImagenPrincipal(p) {
     if (p.imagenes && p.imagenes.length > 0) return p.imagenes[0];
     return PLACEHOLDER_IMG;
-}
-
-/* ================= 🖼️ IMÁGENES (LOCALES, SIN NUBE) ================= */
-function comprimirImagen(file) {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        const url = URL.createObjectURL(file);
-        img.onload = () => {
-            const MAX = 700;
-            let w = img.width, h = img.height;
-            if (w > MAX || h > MAX) {
-                const escala = Math.min(MAX / w, MAX / h);
-                w = Math.round(w * escala);
-                h = Math.round(h * escala);
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-            URL.revokeObjectURL(url);
-            resolve(canvas.toDataURL('image/jpeg', 0.82));
-        };
-        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Imagen inválida')); };
-        img.src = url;
-    });
-}
-
-async function procesarArchivosImagen(input, contexto) {
-    const files = Array.from(input.files || []);
-    if (files.length === 0) return;
-    let agregadas = 0;
-    for (const f of files) {
-        try {
-            const dataUrl = await comprimirImagen(f);
-            if (contexto === 'prod') imagenesProductoTemp.push(dataUrl);
-            else imagenesEdicionTemp.push(dataUrl);
-            agregadas++;
-        } catch (e) { /* ignorar archivo inválido */ }
-    }
-    if (contexto === 'prod') renderListaImagenesProducto();
-    else renderListaImagenesEdicion();
-    input.value = '';
-    if (agregadas > 0) showToast(`✅ ${agregadas} imagen(es) agregada(s)`, "success");
-}
-
-function renderListaImagenesProducto() {
-    const cont = document.getElementById('prodImagesList');
-    if (!cont) return;
-    cont.innerHTML = '';
-    imagenesProductoTemp.forEach((url, idx) => {
-        const div = document.createElement('div');
-        div.className = 'image-item' + (idx === 0 ? ' main-img' : '');
-        div.innerHTML = `
-            <img src="${url}" alt="img-${idx}">
-            <button class="remove-img-btn" onclick="quitarImagenProducto(${idx})">✕</button>
-            <span class="img-index">${idx === 0 ? '👑 Principal' : '#' + (idx + 1)}</span>
-        `;
-        cont.appendChild(div);
-    });
-}
-function quitarImagenProducto(idx) {
-    imagenesProductoTemp.splice(idx, 1);
-    renderListaImagenesProducto();
-}
-
-function renderListaImagenesEdicion() {
-    const cont = document.getElementById('editImagesList');
-    if (!cont) return;
-    cont.innerHTML = '';
-    imagenesEdicionTemp.forEach((url, idx) => {
-        const div = document.createElement('div');
-        div.className = 'image-item' + (idx === 0 ? ' main-img' : '');
-        div.innerHTML = `
-            <img src="${url}" alt="img-${idx}">
-            <button class="remove-img-btn" onclick="quitarImagenEdicion(${idx})">✕</button>
-            <span class="img-index">${idx === 0 ? '👑 Principal' : '#' + (idx + 1)}</span>
-        `;
-        cont.appendChild(div);
-    });
-}
-function quitarImagenEdicion(idx) {
-    imagenesEdicionTemp.splice(idx, 1);
-    renderListaImagenesEdicion();
-}
-
-function agregarUrlsEdicion() {
-    const input = document.getElementById('editUrl');
-    const texto = input.value.trim();
-    if (!texto) { showToast("⚠️ Pega una o más URLs", "warning"); return; }
-    const nuevas = texto.split(/[,\n|]/).map(u => u.trim()).filter(u => u && u.startsWith('http'));
-    if (nuevas.length === 0) { showToast("⚠️ URLs no válidas", "warning"); return; }
-    nuevas.forEach(u => imagenesEdicionTemp.push(u));
-    renderListaImagenesEdicion();
-    input.value = '';
-    showToast(`✅ ${nuevas.length} URL(s) agregada(s)`, "success");
 }
 
 /* ================= 🏪 CATÁLOGO PÚBLICO ================= */
@@ -861,7 +1167,7 @@ function renderNavCategorias() {
     });
 }
 
-function agregarCategoria() {
+async function agregarCategoria() {
     const input = document.getElementById('nuevaCategoriaInput');
     const nombre = input.value.trim();
     if (!nombre || categorias.some(c => c.toLowerCase() === nombre.toLowerCase())) {
@@ -873,9 +1179,10 @@ function agregarCategoria() {
     input.value = '';
     renderSelectCategorias(); renderCategoriasAdmin(); renderNavCategorias();
     showToast("✅ Categoría creada", "success");
+    if (db) await subirDatosANube();
 }
 
-function eliminarCategoria(i) {
+async function eliminarCategoria(i) {
     const c = categorias[i];
     if (productos.some(p => p.categoria === c)) {
         showToast("⚠️ Tiene productos asignados", "danger");
@@ -886,6 +1193,7 @@ function eliminarCategoria(i) {
         guardarLocal();
         renderSelectCategorias(); renderCategoriasAdmin(); renderNavCategorias();
         showToast("🗑️ Categoría eliminada", "danger");
+        if (db) await subirDatosANube();
     }
 }
 
@@ -898,7 +1206,7 @@ function filtrarCategoria(cat, elem) {
 }
 
 /* ================= ➕ CREAR / EDITAR PRODUCTOS ================= */
-function guardarNuevoProducto() {
+async function guardarNuevoProducto() {
     const nombre = document.getElementById('prodNombre').value.trim();
     const precioRaw = document.getElementById('prodPrecio').value.trim();
 
@@ -935,6 +1243,7 @@ function guardarNuevoProducto() {
     renderListaImagenesProducto();
 
     showToast(`✅ ${nombre} publicado`, "success");
+    if (db) await subirDatosANube();
 }
 
 function abrirModalEdicion(index) {
@@ -974,7 +1283,7 @@ function cerrarModalEdicion() {
     renderListaImagenesEdicion();
 }
 
-function guardarEdicionProducto() {
+async function guardarEdicionProducto() {
     if (productoEditandoIndex === null) return;
 
     const nombre = document.getElementById('editNombre').value.trim();
@@ -1011,6 +1320,7 @@ function guardarEdicionProducto() {
 
     cerrarModalEdicion();
     showToast("✅ Producto actualizado", "success");
+    if (db) await subirDatosANube();
 }
 
 /* ================= 🔍 DETALLE ================= */
@@ -1132,7 +1442,7 @@ function renderCatalogo() {
     tbody.innerHTML = html;
 }
 
-function eliminarProducto(i) {
+async function eliminarProducto(i) {
     if (confirm("¿Eliminar este producto?")) {
         const respaldo = productos[i];
         productos.splice(i, 1);
@@ -1141,6 +1451,7 @@ function eliminarProducto(i) {
         renderProductos();
         renderCatalogo();
         showToast("🗑️ Eliminado", "danger");
+        if (db) await subirDatosANube();
     }
 }
 
@@ -1308,6 +1619,8 @@ function verificarPassword() {
     if (document.getElementById('adminPassInput').value === PIN) {
         cerrarLogin();
         document.getElementById('adminPanel').style.display = 'flex';
+        actualizarEstadisticas();
+        actualizarPillsEstado();
     } else {
         showToast("❌ PIN incorrecto", "danger");
     }
@@ -1320,6 +1633,8 @@ function cerrarAdmin() {
 }
 
 const TAB_TITULOS = {
+    'tab-config': 'Configuración API',
+    'tab-sincronizacion': 'Sincronización',
     'tab-personalizacion': 'Personalización',
     'tab-nuevo': 'Nuevo Producto',
     'tab-catalogo': 'Catálogo de Productos',
@@ -1334,6 +1649,7 @@ function switchTab(id, btn) {
     document.getElementById('adminSectionTitle').textContent = TAB_TITULOS[id] || '';
     if (id === 'tab-catalogo') renderCatalogo();
     if (id === 'tab-categorias') renderCategoriasAdmin();
+    if (id === 'tab-sincronizacion') { actualizarEstadisticas(); actualizarPillsEstado(); }
 }
 
 function syncTiendaUI() {
@@ -1345,6 +1661,19 @@ function syncTiendaUI() {
 
 /* ================= 🚀 INICIO ================= */
 window.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('cfgFirebaseUrl').value = FIREBASE_CONFIG.databaseURL;
+    document.getElementById('cfgFirebaseApiKey').value = FIREBASE_CONFIG.apiKey;
+
+    if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.databaseURL) {
+        document.getElementById('firebaseStatus').innerHTML = '<span style="color:var(--success);">✅ Conectando automáticamente...</span>';
+        inicializarFirebaseRealtime();
+    }
+
+    if (IMGBB_CONFIG.apiKey) {
+        document.getElementById('cfgImgbbKey').value = IMGBB_CONFIG.apiKey;
+        document.getElementById('imgbbStatus').innerHTML = '<span style="color:var(--success);">✅ Configurado</span>';
+    }
+
     prepararCacheBusqueda();
     aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
     poblarInputsPersonalizacion();
@@ -1355,6 +1684,8 @@ window.addEventListener('DOMContentLoaded', () => {
     renderNavCategorias();
     renderProductos();
     actualizarCarrito();
+    actualizarEstadisticas();
+    actualizarPillsEstado();
 
     document.getElementById('cfgColorPrimario').addEventListener('input', (e) => {
         aplicarColores(e.target.value, document.getElementById('cfgColorAcento').value);
