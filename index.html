@@ -116,6 +116,10 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px 15px; }
 .sr-cat { font-weight: 700; color: var(--accent); font-size: 11px; text-transform: uppercase; }
 .sr-price { font-weight: 700; color: var(--primary); }
 
+.empty-catalog { grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px 20px; background: rgba(255,255,255,.7); border-radius: 16px; font-size: 34px; }
+.empty-catalog strong { display: block; font-size: 14px; color: var(--text-dark); margin-top: 8px; }
+.empty-catalog small { font-size: 12px; line-height: 1.6; display: block; margin-top: 4px; }
+
 /* 🛒 CARRITO VERDE - ANGOSTO PARA MÓVIL */
 .cart-toggle-btn { position: fixed; bottom: calc(20px + var(--safe-bottom)); right: 20px; background: var(--primary); color: white; border: none; width: 56px; height: 56px; border-radius: 50%; cursor: pointer; box-shadow: 0 8px 30px var(--primary-glow); z-index: 99; font-size: 22px; }
 .cart-count { position: absolute; top: -2px; right: -2px; background: var(--accent); color: white; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid white; }
@@ -228,6 +232,10 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; }
 .status-pill.on { background: #d1fae5; color: #065f46; }
 .status-pill.off { background: #fee2e2; color: #991b1b; }
+
+.reglas-pre { background: #0f172a; color: #a7f3d0; border-radius: 10px; padding: 12px; font-size: 12px; overflow-x: auto; font-family: 'Courier New', monospace; margin: 10px 0; }
+.fix-steps { font-size: 12px; color: #64748b; padding-left: 18px; margin: 0 0 10px 0; line-height: 1.8; }
+.fix-steps strong { color: var(--text-dark); }
 
 @media (min-width: 768px) { .container { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } }
 
@@ -380,6 +388,30 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
             <div class="admin-body">
 
                 <div id="tab-config" class="admin-view active">
+
+                    <div class="dashboard-card" style="border:2px solid var(--danger);">
+                        <h4>🚨 Solución al error "permission_denied"</h4>
+                        <p style="font-size:12px; color:#64748b; margin:0 0 10px 0;">
+                            Ese error significa que <strong>las reglas de tu base de datos Firebase están bloqueando el acceso</strong>. No es un problema del código: se arregla una sola vez en la consola de Firebase siguiendo estos pasos:
+                        </p>
+                        <ol class="fix-steps">
+                            <li>Entra a <a href="https://console.firebase.google.com/" target="_blank" style="color:var(--accent); font-weight:700;">console.firebase.google.com</a> y abre tu proyecto <strong>degustase-1eb19</strong>.</li>
+                            <li>En el menú izquierdo elige <strong>Realtime Database</strong> (Base de datos en tiempo real).</li>
+                            <li>Arriba haz clic en la pestaña <strong>Reglas</strong> (Rules).</li>
+                            <li>Borra todo el texto que haya y pega las reglas de abajo.</li>
+                            <li>Pulsa el botón <strong>Publicar</strong> (Publish).</li>
+                            <li>Vuelve aquí y recarga la página, o pulsa "Guardar y Conectar".</li>
+                        </ol>
+                        <pre class="reglas-pre" id="reglasFirebasePre">{
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}</pre>
+                        <button class="sync-btn secondary" onclick="copiarReglasFirebase()">📋 Copiar reglas</button>
+                        <p style="font-size:11px; color:#64748b; margin:6px 0 0 0;">⚠️ Con estas reglas cualquier persona podrá leer y escribir el catálogo. Es lo habitual en catálogos públicos sin inicio de sesión.</p>
+                    </div>
+
                     <div class="dashboard-card">
                         <h4>🔥 Firebase (Base de Datos en Tiempo Real)</h4>
                         <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
@@ -614,6 +646,32 @@ function guardarLocal() {
 
 /* ================= 🔥 FIREBASE ================= */
 
+const REGLAS_FIREBASE = `{
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}`;
+
+function copiarReglasFirebase() {
+    const listo = () => showToast("📋 Reglas copiadas. Pégalas en Firebase → Realtime Database → Reglas → Publicar", "success");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(REGLAS_FIREBASE).then(listo).catch(() => copiarReglasFallback(listo));
+    } else {
+        copiarReglasFallback(listo);
+    }
+}
+function copiarReglasFallback(listo) {
+    const ta = document.createElement('textarea');
+    ta.value = REGLAS_FIREBASE;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); listo(); } catch (e) { showToast("⚠️ No se pudo copiar. Selecciona el texto manualmente.", "warning"); }
+    ta.remove();
+}
+
 function inicializarFirebaseRealtime() {
 
     // Verificar configuración
@@ -676,76 +734,36 @@ function inicializarFirebaseRealtime() {
 
         const callbackFirebase = (snapshot) => {
 
-            // Evitar error:
-            // Cannot read properties of undefined (reading 'val')
-
             if (!snapshot) {
-
-                console.error(
-                    "Firebase devolvió un snapshot undefined"
-                );
-
-                showToast(
-                    "❌ Firebase no devolvió datos.",
-                    "danger"
-                );
-
+                console.error("Firebase devolvió un snapshot undefined");
+                showToast("❌ Firebase no devolvió datos.", "danger");
                 return;
             }
 
-
-            // Verificar que snapshot tenga .val()
             if (typeof snapshot.val !== "function") {
-
-                console.error(
-                    "Snapshot de Firebase inválido:",
-                    snapshot
-                );
-
-                showToast(
-                    "❌ Respuesta inválida de Firebase.",
-                    "danger"
-                );
-
+                console.error("Snapshot de Firebase inválido:", snapshot);
+                showToast("❌ Respuesta inválida de Firebase.", "danger");
                 return;
             }
 
-
-            // Obtener datos
             const datos = snapshot.val();
 
-
-            console.log(
-                "🔥 Datos recibidos de Firebase:",
-                datos
-            );
-
+            console.log("🔥 Datos recibidos de Firebase:", datos);
 
             // Si la base está vacía
             if (!datos) {
-
-                console.log(
-                    "🔥 Firebase conectado correctamente, pero todavía no hay datos."
-                );
-
+                console.log("🔥 Firebase conectado correctamente, pero todavía no hay datos.");
+                const st = document.getElementById('firebaseStatus');
+                if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado. Aún no hay datos en la nube: pulsa "Subir catálogo a Firebase" en ☁️ Sincronización.</span>';
                 actualizarPillsEstado();
-
                 return;
             }
-
-
-            // ===============================
-            // 🛍️ PRODUCTOS
-            // ===============================
 
             if (datos.productos) {
 
                 const ultimaLocal = parseInt(
-                    localStorage.getItem(
-                        "degustase_last_push"
-                    ) || "0"
+                    localStorage.getItem("degustase_last_push") || "0"
                 );
-
 
                 // Evitar sobrescribir cambios locales
                 if (
@@ -755,104 +773,42 @@ function inicializarFirebaseRealtime() {
                     return;
                 }
 
-
-                // Convertir productos a Array
                 productos = Array.isArray(datos.productos)
                     ? datos.productos
                     : Object.values(datos.productos);
 
-
-                // Asegurar estructura correcta
                 productos.forEach((p) => {
-
-                    if (!p.id) {
-                        p.id = genId();
-                    }
-
-
+                    if (!p.id) { p.id = genId(); }
                     if (!Array.isArray(p.imagenes)) {
-
-                        p.imagenes = p.imagenes
-                            ? [p.imagenes]
-                            : [];
-
+                        p.imagenes = p.imagenes ? [p.imagenes] : [];
                     }
-
                 });
 
-
-                // ===============================
-                // 🏷️ CATEGORÍAS
-                // ===============================
-
                 if (datos.categorias) {
-
-                    categorias = Array.isArray(
-                        datos.categorias
-                    )
+                    categorias = Array.isArray(datos.categorias)
                         ? datos.categorias
                         : Object.values(datos.categorias);
-
                 }
-
-
-                // ===============================
-                // 🏪 INFORMACIÓN DE LA TIENDA
-                // ===============================
 
                 if (datos.tiendaConfig) {
-
-                    tiendaConfig = Object.assign(
-                        {},
-                        TIENDA_DEFAULTS,
-                        datos.tiendaConfig
-                    );
-
+                    tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
                 }
-
-
-                // ===============================
-                // 💾 ACTUALIZAR INTERFAZ
-                // ===============================
 
                 guardarLocal();
-
                 prepararCacheBusqueda();
-
-                aplicarColores(
-                    tiendaConfig.primaryColor,
-                    tiendaConfig.accentColor
-                );
-
+                aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
                 syncTiendaUI();
-
                 poblarInputsPersonalizacion();
-
                 renderProductos();
-
                 renderSelectCategorias();
-
                 renderCategoriasAdmin();
-
                 renderNavCategorias();
-
                 actualizarEstadisticas();
 
-
-                // Actualizar catálogo del administrador
-                const adminPanel =
-                    document.getElementById("adminPanel");
-
-
-                if (
-                    adminPanel &&
-                    adminPanel.style.display === "flex"
-                ) {
-
+                const adminPanel = document.getElementById("adminPanel");
+                if (adminPanel && adminPanel.style.display === "flex") {
                     renderCatalogo();
-
                 }
-
             }
 
         };
@@ -864,32 +820,25 @@ function inicializarFirebaseRealtime() {
 
         const errorFirebase = (error) => {
 
-            console.error(
-                "🔥 Error de Firebase:",
-                error
+            console.error("🔥 Error de Firebase:", error);
+
+            let mensaje = "Error de conexión con Firebase";
+            const esPermisos = error && (
+                error.code === 'PERMISSION_DENIED' ||
+                (error.message || '').indexOf('permission_denied') !== -1
             );
 
-
-            let mensaje =
-                "Error de conexión con Firebase";
-
-
-            if (error && error.message) {
-
-                mensaje +=
-                    ": " + error.message;
-
+            if (esPermisos) {
+                mensaje = "Firebase bloquea el acceso (permission_denied). Solución: Admin → ⚙️ Configuración API → tarjeta roja \"Solución al error permission_denied\".";
+                const st = document.getElementById('firebaseStatus');
+                if (st) st.innerHTML = '<span style="color:var(--danger);">🚨 Reglas de Firebase bloqueando. Sigue los pasos de la tarjeta roja "Solución al error permission_denied".</span>';
+            } else if (error && error.message) {
+                mensaje += ": " + error.message;
             }
 
-
-            showToast(
-                "❌ " + mensaje,
-                "danger"
-            );
-
+            showToast("❌ " + mensaje, "danger");
 
             db = null;
-
             actualizarPillsEstado();
 
         };
@@ -899,62 +848,28 @@ function inicializarFirebaseRealtime() {
         // 🔄 ESCUCHAR CAMBIOS EN TIEMPO REAL
         // ===============================
 
-        ref.on(
-            "value",
-            callbackFirebase,
-            errorFirebase
-        );
-
+        ref.on("value", callbackFirebase, errorFirebase);
 
         // Función para cancelar el listener
         firebaseUnsubscribe = () => {
-
             try {
-
-                ref.off(
-                    "value",
-                    callbackFirebase
-                );
-
+                ref.off("value", callbackFirebase);
             } catch (e) {
-
-                console.warn(
-                    "No se pudo remover el listener:",
-                    e
-                );
-
+                console.warn("No se pudo remover el listener:", e);
             }
-
         };
 
-
-        // Actualizar estado
         actualizarPillsEstado();
 
-
-        console.log(
-            "🔥 Firebase conectado correctamente:",
-            FIREBASE_CONFIG.databaseURL
-        );
-
+        console.log("🔥 Firebase conectado correctamente:", FIREBASE_CONFIG.databaseURL);
 
     } catch (error) {
 
-        console.error(
-            "🔥 Error inicializando Firebase:",
-            error
-        );
+        console.error("🔥 Error inicializando Firebase:", error);
 
-
-        showToast(
-            "❌ Error inicializando Firebase: " +
-            error.message,
-            "danger"
-        );
-
+        showToast("❌ Error inicializando Firebase: " + error.message, "danger");
 
         db = null;
-
         actualizarPillsEstado();
 
     }
@@ -978,7 +893,12 @@ async function subirDatosANube() {
         showToast("✅ Catálogo guardado en la nube", "success");
         actualizarEstadisticas();
     } catch (error) {
-        showToast("❌ Error: " + error.message, "danger");
+        const esPermisos = error && (error.code === 'PERMISSION_DENIED' || (error.message || '').indexOf('permission_denied') !== -1);
+        if (esPermisos) {
+            showToast("❌ Firebase bloquea la escritura. Aplica las reglas de la tarjeta roja en ⚙️ Configuración API.", "danger");
+        } else {
+            showToast("❌ Error: " + error.message, "danger");
+        }
     }
 }
 
@@ -1023,7 +943,12 @@ async function descargarDatosDeNube() {
             showToast("ℹ️ No hay datos en Firebase aún", "warning");
         }
     } catch (error) {
-        showToast("❌ Error: " + error.message, "danger");
+        const esPermisos = error && (error.code === 'PERMISSION_DENIED' || (error.message || '').indexOf('permission_denied') !== -1);
+        if (esPermisos) {
+            showToast("❌ Firebase bloquea la lectura. Aplica las reglas de la tarjeta roja en ⚙️ Configuración API.", "danger");
+        } else {
+            showToast("❌ Error: " + error.message, "danger");
+        }
     }
 }
 
@@ -1326,7 +1251,7 @@ function showToast(message, type = "success") {
     toast.className = `toast ${type}`;
     toast.innerHTML = message;
     document.getElementById('toastContainer').appendChild(toast);
-    setTimeout(() => toast.remove(), 3500);
+    setTimeout(() => toast.remove(), 5000);
 }
 
 function limpiarPrecio(p) {
@@ -1399,6 +1324,10 @@ function renderProductos(lista = null) {
             <button class="add-btn-floating" onclick="event.stopPropagation(); event.preventDefault(); agregarAlCarro(${realIdx})">+</button>`;
         cont.appendChild(card);
     });
+
+    if (cont.children.length === 0) {
+        cont.innerHTML = '<div class="empty-catalog">🥨<strong>Aún no hay productos publicados</strong><small>Entra al Admin → ➕ Nuevo Producto,<br>o descarga el catálogo desde Firebase en ☁️ Sincronización.</small></div>';
+    }
 }
 
 function cambiarImagenCard(cardId, dir) {
