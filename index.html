@@ -383,7 +383,7 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                     <div class="dashboard-card">
                         <h4>🔥 Firebase (Base de Datos en Tiempo Real)</h4>
                         <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
-                            Para que el catálogo, los textos y colores se vean <strong>al instante en todos los dispositivos</strong>, ingresa la API Key y la Database URL de tu proyecto de Firebase.
+                            Para que el catálogo, los textos y colores se vean <strong>al instante en todos los dispositivos</strong>, ingresa la API Key y la Database URL de tu proyecto de Firebase. No agregues <code>/datos</code> a la URL.
                         </p>
                         <div class="form-group">
                             <label>API Key</label>
@@ -391,7 +391,7 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                         </div>
                         <div class="form-group">
                             <label>Database URL</label>
-                            <input type="text" id="cfgFirebaseUrl" placeholder="https://tu-proyecto-default-rtdb.firebaseio.com">
+                            <input type="text" id="cfgFirebaseUrl" placeholder="https://degustase-1eb19-default-rtdb.firebaseio.com">
                         </div>
                         <button class="sync-btn primary" onclick="guardarConfigFirebase()">💾 Guardar y Conectar</button>
                         <div id="firebaseStatus" style="margin-top:10px; font-size:12px;"></div>
@@ -559,7 +559,7 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 let savedFirebaseConfig = JSON.parse(localStorage.getItem('degustase_firebase') || 'null');
 let FIREBASE_CONFIG = {
     apiKey: savedFirebaseConfig?.apiKey || '',
-    databaseURL: savedFirebaseConfig?.databaseURL || ''
+    databaseURL: savedFirebaseConfig?.databaseURL || 'https://degustase-1eb19-default-rtdb.firebaseio.com'
 };
 let IMGBB_CONFIG = JSON.parse(localStorage.getItem('degustase_imgbb') || 'null') || { apiKey: '' };
 
@@ -613,61 +613,350 @@ function guardarLocal() {
 }
 
 /* ================= 🔥 FIREBASE ================= */
+
 function inicializarFirebaseRealtime() {
+
+    // Verificar configuración
     if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.databaseURL) {
-        if (firebaseUnsubscribe) { firebaseUnsubscribe(); firebaseUnsubscribe = null; }
+
+        if (firebaseUnsubscribe) {
+            try {
+                firebaseUnsubscribe();
+            } catch (e) {
+                console.warn("No se pudo cancelar el listener anterior:", e);
+            }
+
+            firebaseUnsubscribe = null;
+        }
+
+        db = null;
         actualizarPillsEstado();
         return;
     }
+
     try {
+
+        // Inicializar Firebase solamente una vez
         if (!firebase.apps.length) {
+
             firebase.initializeApp({
                 apiKey: FIREBASE_CONFIG.apiKey,
                 databaseURL: FIREBASE_CONFIG.databaseURL
             });
+
         }
+
+        // Obtener Realtime Database
         db = firebase.database();
-        if (firebaseUnsubscribe) firebaseUnsubscribe();
 
-        const ref = db.ref('datos');
-        firebaseUnsubscribe = ref.on('value', (snapshot) => {
+
+        // Eliminar listener anterior si existe
+        if (firebaseUnsubscribe) {
+
+            try {
+                firebaseUnsubscribe();
+            } catch (e) {
+                console.warn(
+                    "No se pudo eliminar el listener anterior:",
+                    e
+                );
+            }
+
+            firebaseUnsubscribe = null;
+        }
+
+
+        // Referencia principal de la base de datos
+        const ref = db.ref("datos");
+
+
+        // ===============================
+        // 📥 RECIBIR DATOS DE FIREBASE
+        // ===============================
+
+        const callbackFirebase = (snapshot) => {
+
+            // Evitar error:
+            // Cannot read properties of undefined (reading 'val')
+
+            if (!snapshot) {
+
+                console.error(
+                    "Firebase devolvió un snapshot undefined"
+                );
+
+                showToast(
+                    "❌ Firebase no devolvió datos.",
+                    "danger"
+                );
+
+                return;
+            }
+
+
+            // Verificar que snapshot tenga .val()
+            if (typeof snapshot.val !== "function") {
+
+                console.error(
+                    "Snapshot de Firebase inválido:",
+                    snapshot
+                );
+
+                showToast(
+                    "❌ Respuesta inválida de Firebase.",
+                    "danger"
+                );
+
+                return;
+            }
+
+
+            // Obtener datos
             const datos = snapshot.val();
-            if (datos && datos.productos) {
-                const ultimaLocal = parseInt(localStorage.getItem('degustase_last_push') || '0');
-                if (datos.ultimaActualizacion && datos.ultimaActualizacion <= ultimaLocal) return;
 
-                productos = Array.isArray(datos.productos) ? datos.productos : Object.values(datos.productos);
-                productos.forEach(p => {
-                    if (!p.id) p.id = genId();
-                    if (!Array.isArray(p.imagenes)) p.imagenes = p.imagenes ? [p.imagenes] : [];
+
+            console.log(
+                "🔥 Datos recibidos de Firebase:",
+                datos
+            );
+
+
+            // Si la base está vacía
+            if (!datos) {
+
+                console.log(
+                    "🔥 Firebase conectado correctamente, pero todavía no hay datos."
+                );
+
+                actualizarPillsEstado();
+
+                return;
+            }
+
+
+            // ===============================
+            // 🛍️ PRODUCTOS
+            // ===============================
+
+            if (datos.productos) {
+
+                const ultimaLocal = parseInt(
+                    localStorage.getItem(
+                        "degustase_last_push"
+                    ) || "0"
+                );
+
+
+                // Evitar sobrescribir cambios locales
+                if (
+                    datos.ultimaActualizacion &&
+                    datos.ultimaActualizacion <= ultimaLocal
+                ) {
+                    return;
+                }
+
+
+                // Convertir productos a Array
+                productos = Array.isArray(datos.productos)
+                    ? datos.productos
+                    : Object.values(datos.productos);
+
+
+                // Asegurar estructura correcta
+                productos.forEach((p) => {
+
+                    if (!p.id) {
+                        p.id = genId();
+                    }
+
+
+                    if (!Array.isArray(p.imagenes)) {
+
+                        p.imagenes = p.imagenes
+                            ? [p.imagenes]
+                            : [];
+
+                    }
+
                 });
-                if (datos.categorias) categorias = Array.isArray(datos.categorias) ? datos.categorias : Object.values(datos.categorias);
-                if (datos.tiendaConfig) tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
+
+
+                // ===============================
+                // 🏷️ CATEGORÍAS
+                // ===============================
+
+                if (datos.categorias) {
+
+                    categorias = Array.isArray(
+                        datos.categorias
+                    )
+                        ? datos.categorias
+                        : Object.values(datos.categorias);
+
+                }
+
+
+                // ===============================
+                // 🏪 INFORMACIÓN DE LA TIENDA
+                // ===============================
+
+                if (datos.tiendaConfig) {
+
+                    tiendaConfig = Object.assign(
+                        {},
+                        TIENDA_DEFAULTS,
+                        datos.tiendaConfig
+                    );
+
+                }
+
+
+                // ===============================
+                // 💾 ACTUALIZAR INTERFAZ
+                // ===============================
 
                 guardarLocal();
+
                 prepararCacheBusqueda();
-                aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
+
+                aplicarColores(
+                    tiendaConfig.primaryColor,
+                    tiendaConfig.accentColor
+                );
+
                 syncTiendaUI();
+
                 poblarInputsPersonalizacion();
+
                 renderProductos();
+
                 renderSelectCategorias();
+
                 renderCategoriasAdmin();
+
                 renderNavCategorias();
+
                 actualizarEstadisticas();
-                if (document.getElementById('adminPanel').style.display === 'flex') {
+
+
+                // Actualizar catálogo del administrador
+                const adminPanel =
+                    document.getElementById("adminPanel");
+
+
+                if (
+                    adminPanel &&
+                    adminPanel.style.display === "flex"
+                ) {
+
                     renderCatalogo();
+
                 }
+
             }
-        }, (error) => {
-            console.error("Error de Firebase:", error);
-            showToast("❌ Error de Firebase: " + error.message, "danger");
-        });
+
+        };
+
+
+        // ===============================
+        // ❌ MANEJAR ERRORES DE FIREBASE
+        // ===============================
+
+        const errorFirebase = (error) => {
+
+            console.error(
+                "🔥 Error de Firebase:",
+                error
+            );
+
+
+            let mensaje =
+                "Error de conexión con Firebase";
+
+
+            if (error && error.message) {
+
+                mensaje +=
+                    ": " + error.message;
+
+            }
+
+
+            showToast(
+                "❌ " + mensaje,
+                "danger"
+            );
+
+
+            db = null;
+
+            actualizarPillsEstado();
+
+        };
+
+
+        // ===============================
+        // 🔄 ESCUCHAR CAMBIOS EN TIEMPO REAL
+        // ===============================
+
+        ref.on(
+            "value",
+            callbackFirebase,
+            errorFirebase
+        );
+
+
+        // Función para cancelar el listener
+        firebaseUnsubscribe = () => {
+
+            try {
+
+                ref.off(
+                    "value",
+                    callbackFirebase
+                );
+
+            } catch (e) {
+
+                console.warn(
+                    "No se pudo remover el listener:",
+                    e
+                );
+
+            }
+
+        };
+
+
+        // Actualizar estado
         actualizarPillsEstado();
+
+
+        console.log(
+            "🔥 Firebase conectado correctamente:",
+            FIREBASE_CONFIG.databaseURL
+        );
+
+
     } catch (error) {
-        console.error("Error inicializando Firebase:", error);
-        showToast("❌ " + error.message, "danger");
+
+        console.error(
+            "🔥 Error inicializando Firebase:",
+            error
+        );
+
+
+        showToast(
+            "❌ Error inicializando Firebase: " +
+            error.message,
+            "danger"
+        );
+
+
         db = null;
+
         actualizarPillsEstado();
+
     }
 }
 
@@ -680,7 +969,7 @@ async function subirDatosANube() {
         showToast("📤 Subiendo a Firebase...", "success");
         const ahora = Date.now();
         localStorage.setItem('degustase_last_push', ahora.toString());
-        await db.ref('datos').set({
+        await db.ref("datos").set({
             productos,
             categorias,
             tiendaConfig,
@@ -700,8 +989,15 @@ async function descargarDatosDeNube() {
     }
     try {
         showToast("📥 Descargando de Firebase...", "success");
-        const snapshot = await db.ref('datos').once('value');
+
+        const snapshot = await db.ref("datos").once("value");
+
+        if (!snapshot || typeof snapshot.val !== "function") {
+            throw new Error("Firebase no devolvió un snapshot válido.");
+        }
+
         const datos = snapshot.val();
+
         if (datos && datos.productos) {
             productos = Array.isArray(datos.productos) ? datos.productos : Object.values(datos.productos);
             productos.forEach(p => {
