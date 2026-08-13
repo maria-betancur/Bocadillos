@@ -233,10 +233,6 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 .status-pill.on { background: #d1fae5; color: #065f46; }
 .status-pill.off { background: #fee2e2; color: #991b1b; }
 
-.reglas-pre { background: #0f172a; color: #a7f3d0; border-radius: 10px; padding: 12px; font-size: 12px; overflow-x: auto; font-family: 'Courier New', monospace; margin: 10px 0; }
-.fix-steps { font-size: 12px; color: #64748b; padding-left: 18px; margin: 0 0 10px 0; line-height: 1.8; }
-.fix-steps strong { color: var(--text-dark); }
-
 @media (min-width: 768px) { .container { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } }
 
 @media (max-width: 700px) {
@@ -388,30 +384,6 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
             <div class="admin-body">
 
                 <div id="tab-config" class="admin-view active">
-
-                    <div class="dashboard-card" style="border:2px solid var(--danger);">
-                        <h4>🚨 Solución al error "permission_denied"</h4>
-                        <p style="font-size:12px; color:#64748b; margin:0 0 10px 0;">
-                            Ese error significa que <strong>las reglas de tu base de datos Firebase están bloqueando el acceso</strong>. No es un problema del código: se arregla una sola vez en la consola de Firebase siguiendo estos pasos:
-                        </p>
-                        <ol class="fix-steps">
-                            <li>Entra a <a href="https://console.firebase.google.com/" target="_blank" style="color:var(--accent); font-weight:700;">console.firebase.google.com</a> y abre tu proyecto <strong>degustase-1eb19</strong>.</li>
-                            <li>En el menú izquierdo elige <strong>Realtime Database</strong> (Base de datos en tiempo real).</li>
-                            <li>Arriba haz clic en la pestaña <strong>Reglas</strong> (Rules).</li>
-                            <li>Borra todo el texto que haya y pega las reglas de abajo.</li>
-                            <li>Pulsa el botón <strong>Publicar</strong> (Publish).</li>
-                            <li>Vuelve aquí y recarga la página, o pulsa "Guardar y Conectar".</li>
-                        </ol>
-                        <pre class="reglas-pre" id="reglasFirebasePre">{
-  "rules": {
-    ".read": true,
-    ".write": true
-  }
-}</pre>
-                        <button class="sync-btn secondary" onclick="copiarReglasFirebase()">📋 Copiar reglas</button>
-                        <p style="font-size:11px; color:#64748b; margin:6px 0 0 0;">⚠️ Con estas reglas cualquier persona podrá leer y escribir el catálogo. Es lo habitual en catálogos públicos sin inicio de sesión.</p>
-                    </div>
-
                     <div class="dashboard-card">
                         <h4>🔥 Firebase (Base de Datos en Tiempo Real)</h4>
                         <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
@@ -646,32 +618,6 @@ function guardarLocal() {
 
 /* ================= 🔥 FIREBASE ================= */
 
-const REGLAS_FIREBASE = `{
-  "rules": {
-    ".read": true,
-    ".write": true
-  }
-}`;
-
-function copiarReglasFirebase() {
-    const listo = () => showToast("📋 Reglas copiadas. Pégalas en Firebase → Realtime Database → Reglas → Publicar", "success");
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(REGLAS_FIREBASE).then(listo).catch(() => copiarReglasFallback(listo));
-    } else {
-        copiarReglasFallback(listo);
-    }
-}
-function copiarReglasFallback(listo) {
-    const ta = document.createElement('textarea');
-    ta.value = REGLAS_FIREBASE;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); listo(); } catch (e) { showToast("⚠️ No se pudo copiar. Selecciona el texto manualmente.", "warning"); }
-    ta.remove();
-}
-
 function inicializarFirebaseRealtime() {
 
     // Verificar configuración
@@ -823,16 +769,8 @@ function inicializarFirebaseRealtime() {
             console.error("🔥 Error de Firebase:", error);
 
             let mensaje = "Error de conexión con Firebase";
-            const esPermisos = error && (
-                error.code === 'PERMISSION_DENIED' ||
-                (error.message || '').indexOf('permission_denied') !== -1
-            );
 
-            if (esPermisos) {
-                mensaje = "Firebase bloquea el acceso (permission_denied). Solución: Admin → ⚙️ Configuración API → tarjeta roja \"Solución al error permission_denied\".";
-                const st = document.getElementById('firebaseStatus');
-                if (st) st.innerHTML = '<span style="color:var(--danger);">🚨 Reglas de Firebase bloqueando. Sigue los pasos de la tarjeta roja "Solución al error permission_denied".</span>';
-            } else if (error && error.message) {
+            if (error && error.message) {
                 mensaje += ": " + error.message;
             }
 
@@ -893,12 +831,7 @@ async function subirDatosANube() {
         showToast("✅ Catálogo guardado en la nube", "success");
         actualizarEstadisticas();
     } catch (error) {
-        const esPermisos = error && (error.code === 'PERMISSION_DENIED' || (error.message || '').indexOf('permission_denied') !== -1);
-        if (esPermisos) {
-            showToast("❌ Firebase bloquea la escritura. Aplica las reglas de la tarjeta roja en ⚙️ Configuración API.", "danger");
-        } else {
-            showToast("❌ Error: " + error.message, "danger");
-        }
+        showToast("❌ Error: " + error.message, "danger");
     }
 }
 
@@ -943,12 +876,7 @@ async function descargarDatosDeNube() {
             showToast("ℹ️ No hay datos en Firebase aún", "warning");
         }
     } catch (error) {
-        const esPermisos = error && (error.code === 'PERMISSION_DENIED' || (error.message || '').indexOf('permission_denied') !== -1);
-        if (esPermisos) {
-            showToast("❌ Firebase bloquea la lectura. Aplica las reglas de la tarjeta roja en ⚙️ Configuración API.", "danger");
-        } else {
-            showToast("❌ Error: " + error.message, "danger");
-        }
+        showToast("❌ Error: " + error.message, "danger");
     }
 }
 
@@ -1251,7 +1179,7 @@ function showToast(message, type = "success") {
     toast.className = `toast ${type}`;
     toast.innerHTML = message;
     document.getElementById('toastContainer').appendChild(toast);
-    setTimeout(() => toast.remove(), 5000);
+    setTimeout(() => toast.remove(), 3500);
 }
 
 function limpiarPrecio(p) {
