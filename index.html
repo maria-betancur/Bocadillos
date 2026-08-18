@@ -66,9 +66,7 @@ header nav a:hover, header nav a.active { background: var(--primary); color: whi
 .connection-indicator.connected { border: 2px solid var(--success); color: var(--success); }
 .connection-indicator.disconnected { border: 2px solid var(--danger); color: var(--danger); }
 .connection-indicator.syncing { border: 2px solid var(--warning); color: #b45309; }
-.connection-indicator .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-}
+.connection-indicator .dot { width: 8px; height: 8px; border-radius: 50%; }
 .connection-indicator.connected .dot { background: var(--success); animation: pulse 2s infinite; }
 .connection-indicator.disconnected .dot { background: var(--danger); }
 .connection-indicator.syncing .dot { background: var(--warning); animation: pulse 0.8s infinite; }
@@ -417,9 +415,9 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                     <div class="dashboard-card">
                         <h4>🔥 Firebase (Base de Datos en Tiempo Real)</h4>
                         <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
-                            Para que el catálogo, los textos y colores se vean <strong>al instante en todos los dispositivos</strong>, ingresa la API Key y la Database URL de tu proyecto de Firebase.
+                            Una vez conectado, <strong>Firebase permanecerá conectado permanentemente</strong> y se reconectará automáticamente si se pierde la conexión.
                             <br><br>
-                            <strong style="color:var(--danger);">⚠️ IMPORTANTE:</strong> En Firebase Console → Realtime Database → Reglas, asegúrate de tener:
+                            <strong style="color:var(--danger);">⚠️ Reglas de Firebase</strong> (Firebase Console → Realtime Database → Reglas):
                         </p>
                         <pre style="background:#1e293b; color:#e2e8f0; padding:12px; border-radius:8px; font-size:11px; overflow-x:auto; margin:10px 0;">{
   "rules": {
@@ -464,13 +462,17 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                         <div style="margin-top:5px; padding:12px; background:#f8fafc; border-radius:10px; font-size:12px;">
                             <span id="statsInfo">Cargando...</span>
                         </div>
+                        <div style="margin-top:10px; padding:10px; background:#ecfdf5; border-radius:10px; font-size:11px; color:#065f46;">
+                            💡 <strong>Conexión persistente activa:</strong> Firebase se reconectará automáticamente si se pierde la conexión. Los datos se sincronizan en tiempo real.
+                        </div>
                     </div>
                     <div class="dashboard-card">
                         <h4>🔄 Acciones de Nube</h4>
                         <button class="sync-btn primary" onclick="subirDatosANube()">⬆️ Subir catálogo a Firebase</button>
                         <button class="sync-btn secondary" onclick="descargarDatosDeNube()">⬇️ Descargar catálogo de Firebase</button>
                         <button class="sync-btn warning" onclick="forzarDescarga()">⚡ Forzar descarga (ignorar versión local)</button>
-                        <p style="font-size:11px; color:#64748b; margin:8px 0 0 0;">💡 Los cambios se suben automáticamente si Firebase está conectado. Usa "Forzar descarga" si ves datos desactualizados.</p>
+                        <button class="sync-btn ghost" onclick="reconectarManual()">🔄 Reconectar manualmente</button>
+                        <p style="font-size:11px; color:#64748b; margin:8px 0 0 0;">💡 Los cambios se suben automáticamente. Usa "Reconectar" si el indicador muestra error.</p>
                     </div>
                     <div class="dashboard-card">
                         <h4>📋 Registro de Sincronización</h4>
@@ -617,9 +619,11 @@ let db = null;
 let firebaseRef = null;
 let firebaseConnected = false;
 let firebaseListenerActive = false;
-let syncRetryCount = 0;
+let firebaseInitialized = false;
 let syncRetryTimer = null;
-const MAX_SYNC_RETRIES = 5;
+let heartbeatTimer = null;
+let reconnectAttempts = 0;
+let userManuallyDisconnected = false; // Solo true cuando el usuario pulsa "Desconectar"
 
 /* ================= 🧠 DATOS ================= */
 const TIENDA_DEFAULTS = {
@@ -680,73 +684,90 @@ function logSync(message, type = 'info') {
     if (log.children.length > 50) log.removeChild(log.lastChild);
 }
 
-/* ================= 🔥 FIREBASE - CONEXIÓN ROBUSTA ================= */
+/* ================= 🔥 FIREBASE - CONEXIÓN PERMANENTE ================= */
 
-function desconectarFirebase() {
-    if (firebaseRef) {
-        try { firebaseRef.off(); } catch(e) {}
-        firebaseRef = null;
+/**
+ * Activa la persistencia offline de Firebase (solo una vez por sesión).
+ * Esto hace que Firebase mantenga los datos en caché y se reconecte automáticamente.
+ */
+function activarPersistenciaFirebase() {
+    try {
+        firebase.database().setPersistenceEnabled(true);
+        firebase.database().setPersistenceCacheSizeBytes(50 * 1024 * 1024); // 50MB
+        logSync('Persistencia offline activada (50MB)', 'success');
+    } catch (e) {
+        // Puede fallar si ya está activada, no es crítico
+        console.warn('Persistencia:', e.message);
     }
-    db = null;
-    firebaseConnected = false;
-    firebaseListenerActive = false;
-    if (syncRetryTimer) { clearTimeout(syncRetryTimer); syncRetryTimer = null; }
-    syncRetryCount = 0;
-    localStorage.removeItem('degustase_firebase');
-    FIREBASE_CONFIG.apiKey = '';
-    FIREBASE_CONFIG.databaseURL = '';
-    document.getElementById('cfgFirebaseApiKey').value = '';
-    document.getElementById('cfgFirebaseUrl').value = '';
-    document.getElementById('firebaseStatus').innerHTML = '<span style="color:#64748b;">🔌 Firebase desconectado</span>';
-    actualizarPillsEstado();
-    actualizarIndicadorConexion();
-    logSync('Firebase desconectado manualmente', 'info');
-    showToast('🔌 Firebase desconectado', 'warning');
 }
 
-function inicializarFirebaseRealtime(forceReconnect = false) {
+/**
+ * Inicializa Firebase de forma robusta. Una vez conectado, NUNCA se desconecta
+ * a menos que el usuario pulse explícitamente "Desconectar".
+ */
+function inicializarFirebaseRealtime() {
     if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.databaseURL) {
-        logSync('No hay configuración de Firebase', 'error');
+        logSync('No hay configuración de Firebase', 'info');
         actualizarIndicadorConexion();
         return;
     }
 
-    try {
-        // Limpiar listener anterior
-        if (firebaseRef) {
-            try { firebaseRef.off(); } catch(e) {}
-            firebaseRef = null;
-        }
+    // Si el usuario desconectó manualmente, no reconectar automáticamente
+    if (userManuallyDisconnected) {
+        logSync('Usuario desconectó manualmente. No se reconectará.', 'info');
+        return;
+    }
 
-        // Inicializar Firebase app si no existe
-        if (!firebase.apps.length) {
-            firebase.initializeApp({
-                apiKey: FIREBASE_CONFIG.apiKey,
-                databaseURL: FIREBASE_CONFIG.databaseURL
-            });
-            logSync('Firebase App inicializado', 'success');
+    try {
+        // 1. Inicializar app Firebase UNA SOLA VEZ
+        if (!firebaseInitialized) {
+            if (firebase.apps.length === 0) {
+                firebase.initializeApp({
+                    apiKey: FIREBASE_CONFIG.apiKey,
+                    databaseURL: FIREBASE_CONFIG.databaseURL
+                });
+                activarPersistenciaFirebase();
+                logSync('Firebase App inicializado', 'success');
+            }
+            firebaseInitialized = true;
         }
 
         db = firebase.database();
         firebaseRef = db.ref("datos");
 
-        // Configurar reconexión automática
-        db.ref('.info/connected').on('value', (snap) => {
+        // 2. Mantener la referencia sincronizada SIEMPRE (keepSynced)
+        // Esto fuerza a Firebase a mantener la conexión abierta
+        firebaseRef.keepSynced(true);
+        logSync('keepSynced(true) activado - conexión permanente', 'success');
+
+        // 3. Listener de conexión global de Firebase
+        // Firebase maneja internamente la reconexión con backoff exponencial
+        const connectedRef = db.ref('.info/connected');
+        connectedRef.on('value', (snap) => {
             const connected = snap.val() === true;
+
             if (connected && !firebaseConnected) {
                 firebaseConnected = true;
-                logSync('Conexión a Firebase establecida', 'success');
-                actualizarIndicadorConexion();
-                syncRetryCount = 0;
+                reconnectAttempts = 0;
+                logSync('✅ Conectado a Firebase', 'success');
+                actualizarIndicadorConexion('connected');
+                actualizarPillsEstado();
+
+                const st = document.getElementById('firebaseStatus');
+                if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado permanentemente. Los cambios se sincronizan en tiempo real.</span>';
             } else if (!connected && firebaseConnected) {
                 firebaseConnected = false;
-                logSync('Desconectado de Firebase', 'error');
-                actualizarIndicadorConexion();
-                intentarReconexion();
+                logSync('⚠️ Conexión perdida. Firebase reconectará automáticamente...', 'warning');
+                actualizarIndicadorConexion('syncing');
+                actualizarPillsEstado();
+                // NO hacer nada más - Firebase se reconectará solo
+            } else if (!connected && !firebaseConnected) {
+                // Sigue desconectado - Firebase está intentando reconectar
+                actualizarIndicadorConexion('syncing');
             }
         });
 
-        // Escuchar cambios en tiempo real
+        // 4. Listener principal de datos (siempre activo)
         firebaseListenerActive = true;
         firebaseRef.on('value', (snapshot) => {
             manejarDatosFirebase(snapshot);
@@ -754,22 +775,59 @@ function inicializarFirebaseRealtime(forceReconnect = false) {
             manejarErrorFirebase(error);
         });
 
+        // 5. Heartbeat: mantener la conexión viva revisando periódicamente
+        iniciarHeartbeat();
+
         actualizarPillsEstado();
-        actualizarIndicadorConexion();
-        logSync('Listener de Firebase activo', 'success');
+        actualizarIndicadorConexion('syncing');
+        logSync('Listeners activos - esperando datos...', 'info');
 
     } catch (error) {
         console.error("Error inicializando Firebase:", error);
         logSync('Error: ' + error.message, 'error');
         showToast("❌ Error: " + error.message, "danger");
-        actualizarIndicadorConexion();
-        intentarReconexion();
+        // NO poner db = null aquí, reintentar después
+        programarReintencion();
     }
 }
 
+/**
+ * Heartbeat: cada 30 segundos verifica que la conexión siga viva.
+ * Si detecta que está desconectado pero debería estar conectado, fuerza reconexión.
+ */
+function iniciarHeartbeat() {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+
+    heartbeatTimer = setInterval(() => {
+        if (userManuallyDisconnected) return;
+        if (!FIREBASE_CONFIG.apiKey) return;
+
+        // Si tenemos db pero no estamos conectados, verificar
+        if (db && !firebaseConnected) {
+            try {
+                // Intentar una operación ligera para forzar reconexión
+                db.goOnline();
+                logSync('🔄 goOnline() ejecutado - forzando reconexión', 'info');
+            } catch(e) {
+                console.warn('Heartbeat error:', e);
+            }
+        }
+    }, 30000);
+}
+
+function detenerHeartbeat() {
+    if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+    }
+}
+
+/**
+ * Maneja los datos recibidos de Firebase
+ */
 function manejarDatosFirebase(snapshot) {
     if (!snapshot) {
-        logSync('Snapshot vacío de Firebase', 'error');
+        logSync('Snapshot vacío', 'info');
         return;
     }
 
@@ -785,8 +843,6 @@ function manejarDatosFirebase(snapshot) {
         logSync('Firebase vacío - sin datos aún', 'info');
         const st = document.getElementById('firebaseStatus');
         if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado. Base vacía. Pulsa "Subir catálogo" para enviar datos.</span>';
-        firebaseConnected = true;
-        actualizarIndicadorConexion();
         return;
     }
 
@@ -796,7 +852,6 @@ function manejarDatosFirebase(snapshot) {
             ? datos.productos
             : Object.values(datos.productos);
 
-        // Normalizar datos
         nuevosProductos.forEach((p) => {
             if (!p.id) p.id = genId();
             if (!Array.isArray(p.imagenes)) {
@@ -805,22 +860,19 @@ function manejarDatosFirebase(snapshot) {
         });
 
         productos = nuevosProductos;
-        logSync(`${productos.length} productos recibidos de Firebase`, 'success');
+        logSync(`${productos.length} productos recibidos`, 'success');
     }
 
-    // Procesar categorías
     if (datos.categorias) {
         categorias = Array.isArray(datos.categorias)
             ? datos.categorias
             : Object.values(datos.categorias);
     }
 
-    // Procesar configuración de tienda
     if (datos.tiendaConfig) {
         tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
     }
 
-    // Guardar todo localmente
     guardarLocal();
     prepararCacheBusqueda();
     aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
@@ -836,15 +888,14 @@ function manejarDatosFirebase(snapshot) {
     if (adminPanel && adminPanel.style.display === "flex") {
         renderCatalogo();
     }
-
-    firebaseConnected = true;
-    actualizarIndicadorConexion();
 }
 
+/**
+ * Maneja errores de Firebase SIN desconectar permanentemente.
+ * Firebase tiene su propio sistema de reintento con backoff exponencial.
+ */
 function manejarErrorFirebase(error) {
-    console.error("Error Firebase:", error);
-    firebaseConnected = false;
-    firebaseListenerActive = false;
+    console.warn("Error Firebase (se reintentará automáticamente):", error);
 
     let mensaje = "Error de conexión";
     if (error && error.code) {
@@ -853,13 +904,10 @@ function manejarErrorFirebase(error) {
                 mensaje = 'Permiso denegado. Verifica las reglas de Firebase';
                 break;
             case 'NETWORK_ERROR':
-                mensaje = 'Error de red. Verifica tu conexión a internet';
+                mensaje = 'Error de red. Reintentando...';
                 break;
             case 'INVALID_TOKEN':
                 mensaje = 'Token inválido. Revisa tu API Key';
-                break;
-            case 'AUTHENTICATION_DISABLED':
-                mensaje = 'Autenticación deshabilitada en Firebase';
                 break;
             default:
                 mensaje = error.message || error.code;
@@ -868,30 +916,128 @@ function manejarErrorFirebase(error) {
         mensaje = error.message;
     }
 
-    logSync('Error: ' + mensaje, 'error');
-    showToast("❌ Firebase: " + mensaje, "danger");
+    logSync('⚠️ ' + mensaje + ' (Firebase reintentará)', 'error');
+    firebaseConnected = false;
     actualizarPillsEstado();
-    actualizarIndicadorConexion();
-    intentarReconexion();
+    actualizarIndicadorConexion('syncing');
+
+    // NO destruir db ni firebaseRef - Firebase se reconectará solo
+    // Solo programar reintento si el error es grave
+    if (error && (error.code === 'INVALID_TOKEN' || error.code === 'PERMISSION_DENIED')) {
+        programarReintencion();
+    }
 }
 
-function intentarReconexion() {
-    if (syncRetryCount >= MAX_SYNC_RETRIES) {
-        logSync('Máximo de reintentos alcanzado. Pulsa "Conectar" manualmente.', 'error');
-        showToast('⚠️ No se pudo reconectar. Intenta manualmente.', 'warning');
+/**
+ * Programa un reintento suave (sin destruir nada)
+ */
+function programarReintencion() {
+    if (userManuallyDisconnected) return;
+    if (syncRetryTimer) clearTimeout(syncRetryTimer);
+
+    reconnectAttempts++;
+    // Backoff exponencial con tope de 60 segundos
+    const delay = Math.min(2000 * Math.pow(1.5, Math.min(reconnectAttempts, 10)), 60000);
+
+    logSync(`Reintentando en ${(delay/1000).toFixed(0)}s...`, 'info');
+
+    syncRetryTimer = setTimeout(() => {
+        if (userManuallyDisconnected) return;
+        if (!FIREBASE_CONFIG.apiKey) return;
+
+        try {
+            // Solo re-adjuntar el listener si es necesario
+            if (db && firebaseRef && !firebaseListenerActive) {
+                firebaseRef.on('value', (snapshot) => {
+                    manejarDatosFirebase(snapshot);
+                }, (error) => {
+                    manejarErrorFirebase(error);
+                });
+                firebaseListenerActive = true;
+                logSync('Listener re-adjuntado', 'success');
+            } else if (!db) {
+                // Si db se perdió, reinicializar todo
+                firebaseInitialized = false;
+                inicializarFirebaseRealtime();
+            }
+        } catch(e) {
+            console.warn('Error en reintento:', e);
+            programarReintencion();
+        }
+    }, delay);
+}
+
+/**
+ * Desconexión MANUAL solo cuando el usuario lo pide explícitamente
+ */
+function desconectarFirebase() {
+    if (!confirm("¿Desconectar Firebase? Deberás volver a configurarlo para sincronizar.")) return;
+
+    userManuallyDisconnected = true;
+
+    // Limpiar timers
+    if (syncRetryTimer) { clearTimeout(syncRetryTimer); syncRetryTimer = null; }
+    detenerHeartbeat();
+
+    // Quitar listeners
+    try {
+        if (firebaseRef) {
+            firebaseRef.keepSynced(false);
+            firebaseRef.off();
+        }
+        if (db) {
+            db.ref('.info/connected').off();
+        }
+    } catch(e) {}
+
+    firebaseRef = null;
+    db = null;
+    firebaseConnected = false;
+    firebaseListenerActive = false;
+    firebaseInitialized = false;
+    reconnectAttempts = 0;
+
+    // Borrar configuración guardada
+    localStorage.removeItem('degustase_firebase');
+    FIREBASE_CONFIG.apiKey = '';
+    FIREBASE_CONFIG.databaseURL = '';
+    document.getElementById('cfgFirebaseApiKey').value = '';
+    document.getElementById('cfgFirebaseUrl').value = '';
+    document.getElementById('firebaseStatus').innerHTML = '<span style="color:#64748b;">🔌 Firebase desconectado</span>';
+
+    actualizarPillsEstado();
+    actualizarIndicadorConexion();
+    logSync('🔌 Desconectado manualmente por el usuario', 'info');
+    showToast('🔌 Firebase desconectado', 'warning');
+}
+
+/**
+ * Reconexión manual (botón en admin)
+ */
+function reconectarManual() {
+    if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.databaseURL) {
+        showToast("⚠️ Configura Firebase primero", "warning");
         return;
     }
 
-    syncRetryCount++;
-    const delay = Math.min(3000 * syncRetryCount, 15000);
-    logSync(`Reintentando en ${delay/1000}s (intento ${syncRetryCount}/${MAX_SYNC_RETRIES})`, 'info');
-    actualizarIndicadorConexion('syncing');
+    userManuallyDisconnected = false;
+    reconnectAttempts = 0;
 
-    if (syncRetryTimer) clearTimeout(syncRetryTimer);
-    syncRetryTimer = setTimeout(() => {
-        logSync('Reintentando conexión...', 'info');
-        inicializarFirebaseRealtime(true);
-    }, delay);
+    // Limpiar estado anterior
+    if (syncRetryTimer) { clearTimeout(syncRetryTimer); syncRetryTimer = null; }
+    try {
+        if (firebaseRef) { firebaseRef.off(); }
+        if (db) { db.ref('.info/connected').off(); }
+    } catch(e) {}
+
+    firebaseRef = null;
+    db = null;
+    firebaseConnected = false;
+    firebaseListenerActive = false;
+
+    logSync('🔄 Reconexión manual iniciada...', 'info');
+    showToast('🔄 Reconectando...', 'success');
+    inicializarFirebaseRealtime();
 }
 
 function actualizarIndicadorConexion(estado) {
@@ -899,7 +1045,16 @@ function actualizarIndicadorConexion(estado) {
     const text = document.getElementById('connectionText');
     if (!indicator || !text) return;
 
-    const estadoReal = estado || (firebaseConnected ? 'connected' : (FIREBASE_CONFIG.apiKey ? 'syncing' : 'disconnected'));
+    let estadoReal = estado;
+    if (!estadoReal) {
+        if (userManuallyDisconnected || !FIREBASE_CONFIG.apiKey) {
+            estadoReal = 'disconnected';
+        } else if (firebaseConnected) {
+            estadoReal = 'connected';
+        } else {
+            estadoReal = 'syncing';
+        }
+    }
 
     indicator.className = 'connection-indicator ' + estadoReal;
     switch(estadoReal) {
@@ -917,10 +1072,11 @@ function actualizarIndicadorConexion(estado) {
 
 function mostrarEstadoConexion() {
     if (firebaseConnected) {
-        showToast('✅ Firebase conectado. Sincronización en tiempo real activa.', 'success');
-    } else if (FIREBASE_CONFIG.apiKey) {
-        showToast('🔄 Intentando conectar a Firebase...', 'warning');
-        inicializarFirebaseRealtime(true);
+        showToast('✅ Firebase conectado permanentemente. Sincronización en tiempo real activa.', 'success');
+    } else if (FIREBASE_CONFIG.apiKey && !userManuallyDisconnected) {
+        showToast('🔄 Firebase está intentando conectarse automáticamente...', 'warning');
+    } else if (userManuallyDisconnected) {
+        showToast('🔌 Desconectado. Ve a Admin → Configuración API para reconectar.', 'warning');
     } else {
         showToast('⚠️ Firebase no configurado. Ve a Admin → Configuración API', 'warning');
     }
@@ -928,13 +1084,13 @@ function mostrarEstadoConexion() {
 
 async function subirDatosANube() {
     if (!db || !firebaseRef) {
-        showToast("⚠️ Configura Firebase primero", "warning");
-        logSync('Error: Firebase no configurado', 'error');
+        showToast("⚠️ Firebase no está conectado", "warning");
+        logSync('Error: Firebase no conectado', 'error');
         return;
     }
     try {
         actualizarIndicadorConexion('syncing');
-        logSync('Subiendo datos a Firebase...', 'info');
+        logSync('Subiendo datos...', 'info');
         showToast("📤 Subiendo a Firebase...", "success");
 
         const ahora = Date.now();
@@ -947,25 +1103,23 @@ async function subirDatosANube() {
             ultimaActualizacion: ahora
         });
 
-        logSync('Datos subidos correctamente', 'success');
+        logSync('✅ Datos subidos correctamente', 'success');
         showToast("✅ Catálogo guardado en la nube", "success");
         actualizarEstadisticas();
-        actualizarIndicadorConexion();
     } catch (error) {
         logSync('Error al subir: ' + (error.message || error), 'error');
         showToast("❌ Error: " + (error.message || 'Desconocido'), "danger");
-        actualizarIndicadorConexion();
     }
 }
 
 async function descargarDatosDeNube() {
     if (!db || !firebaseRef) {
-        showToast("⚠️ Configura Firebase primero", "warning");
+        showToast("⚠️ Firebase no está conectado", "warning");
         return;
     }
     try {
         actualizarIndicadorConexion('syncing');
-        logSync('Descargando datos de Firebase...', 'info');
+        logSync('Descargando datos...', 'info');
         showToast("📥 Descargando de Firebase...", "success");
 
         const snapshot = await firebaseRef.once("value");
@@ -991,34 +1145,29 @@ async function descargarDatosDeNube() {
             renderNavCategorias();
             renderCatalogo();
             actualizarEstadisticas();
-            logSync(`${productos.length} productos descargados`, 'success');
+            logSync(`✅ ${productos.length} productos descargados`, 'success');
             showToast(`✅ ${productos.length} productos descargados`, "success");
         } else {
             logSync('No hay datos en Firebase', 'info');
             showToast("ℹ️ No hay datos en Firebase aún", "warning");
         }
-        actualizarIndicadorConexion();
     } catch (error) {
         logSync('Error al descargar: ' + (error.message || error), 'error');
         showToast("❌ Error: " + (error.message || 'Desconocido'), "danger");
-        actualizarIndicadorConexion();
     }
 }
 
 async function forzarDescarga() {
     if (!db || !firebaseRef) {
-        showToast("⚠️ Configura Firebase primero", "warning");
+        showToast("⚠️ Firebase no está conectado", "warning");
         return;
     }
     if (!confirm("¿Forzar descarga? Esto reemplazará los datos locales con los de Firebase.")) return;
 
     try {
         actualizarIndicadorConexion('syncing');
-        logSync('Forzando descarga desde Firebase...', 'info');
+        logSync('Forzando descarga...', 'info');
         showToast("⚡ Forzando descarga...", "success");
-
-        // Eliminar listener temporalmente
-        firebaseRef.off();
 
         const snapshot = await firebaseRef.once("value");
         const datos = snapshot.val();
@@ -1043,31 +1192,15 @@ async function forzarDescarga() {
             renderNavCategorias();
             renderCatalogo();
             actualizarEstadisticas();
-            logSync(`Descarga forzada: ${productos.length} productos`, 'success');
+            logSync(`✅ Descarga forzada: ${productos.length} productos`, 'success');
             showToast(`✅ ${productos.length} productos descargados`, "success");
         } else {
-            logSync('Firebase vacío en descarga forzada', 'info');
+            logSync('Firebase vacío', 'info');
             showToast("ℹ️ No hay datos en Firebase", "warning");
         }
-
-        // Reactivar listener
-        firebaseRef.on('value', (snapshot) => {
-            manejarDatosFirebase(snapshot);
-        }, (error) => {
-            manejarErrorFirebase(error);
-        });
-
-        actualizarIndicadorConexion();
     } catch (error) {
-        logSync('Error en descarga forzada: ' + (error.message || error), 'error');
+        logSync('Error: ' + (error.message || error), 'error');
         showToast("❌ Error: " + (error.message || 'Desconocido'), "danger");
-        // Reactivar listener incluso si falla
-        firebaseRef.on('value', (snapshot) => {
-            manejarDatosFirebase(snapshot);
-        }, (error) => {
-            manejarErrorFirebase(error);
-        });
-        actualizarIndicadorConexion();
     }
 }
 
@@ -1081,11 +1214,15 @@ function guardarConfigFirebase() {
     FIREBASE_CONFIG.apiKey = apiKey;
     FIREBASE_CONFIG.databaseURL = url.replace(/\/$/, '');
     localStorage.setItem('degustase_firebase', JSON.stringify(FIREBASE_CONFIG));
+
+    // Resetear estado de desconexión manual
+    userManuallyDisconnected = false;
+    reconnectAttempts = 0;
+
     document.getElementById('firebaseStatus').innerHTML = '<span style="color:var(--success);">✅ Conectando a Firebase...</span>';
     showToast("✅ Configuración guardada", "success");
     logSync('Configuración Firebase guardada', 'success');
-    syncRetryCount = 0;
-    inicializarFirebaseRealtime(true);
+    inicializarFirebaseRealtime();
 }
 
 function guardarConfigImgBB() {
@@ -1105,9 +1242,16 @@ function actualizarPillsEstado() {
     const pf = document.getElementById('pillFirebase');
     const pi = document.getElementById('pillImgbb');
     if (pf) {
-        if (firebaseConnected) { pf.className = 'status-pill on'; pf.textContent = '🔥 Firebase: conectado'; }
-        else if (FIREBASE_CONFIG.apiKey) { pf.className = 'status-pill off'; pf.textContent = '🔥 Firebase: conectando...'; }
-        else { pf.className = 'status-pill off'; pf.textContent = '🔥 Firebase: desconectado'; }
+        if (firebaseConnected) {
+            pf.className = 'status-pill on';
+            pf.textContent = '🔥 Firebase: conectado permanente';
+        } else if (FIREBASE_CONFIG.apiKey && !userManuallyDisconnected) {
+            pf.className = 'status-pill off';
+            pf.textContent = '🔥 Firebase: reconectando...';
+        } else {
+            pf.className = 'status-pill off';
+            pf.textContent = '🔥 Firebase: desconectado';
+        }
     }
     if (pi) {
         if (IMGBB_CONFIG.apiKey) { pi.className = 'status-pill on'; pi.textContent = '🖼️ ImgBB: configurado'; }
@@ -1120,7 +1264,11 @@ function actualizarEstadisticas() {
     const totalImgs = productos.reduce((acc, p) => acc + ((p.imagenes && p.imagenes.length) || 0), 0);
     const el = document.getElementById('statsInfo');
     if (el) {
-        const estado = firebaseConnected ? '☁️ Sincronizado en tiempo real' : (FIREBASE_CONFIG.apiKey ? '🔄 Conectando...' : '📴 Solo local');
+        let estado;
+        if (firebaseConnected) estado = '☁️ Conectado permanentemente';
+        else if (FIREBASE_CONFIG.apiKey && !userManuallyDisconnected) estado = '🔄 Reconectando automáticamente...';
+        else if (userManuallyDisconnected) estado = '🔌 Desconectado manualmente';
+        else estado = '📴 No configurado';
         el.innerHTML = `📦 <strong>${productos.length}</strong> productos | 🖼️ <strong>${totalImgs}</strong> imágenes | 💾 <strong>${(size/1024).toFixed(1)} KB</strong> | ${estado}`;
     }
 }
@@ -2014,7 +2162,9 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cfgFirebaseUrl').value = FIREBASE_CONFIG.databaseURL;
     document.getElementById('cfgFirebaseApiKey').value = FIREBASE_CONFIG.apiKey;
 
+    // Si hay configuración guardada, conectar AUTOMÁTICAMENTE
     if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.databaseURL) {
+        userManuallyDisconnected = false; // Asegurar que no esté bloqueado
         document.getElementById('firebaseStatus').innerHTML = '<span style="color:var(--success);">✅ Conectando automáticamente...</span>';
         logSync('Iniciando conexión automática a Firebase...', 'info');
         inicializarFirebaseRealtime();
@@ -2048,27 +2198,43 @@ window.addEventListener('DOMContentLoaded', () => {
         aplicarColores(document.getElementById('cfgColorPrimario').value, e.target.value);
     });
 
-    // Detectar cuando el usuario vuelve a la pestaña (útil para reconectar)
+    // Al volver a la pestaña, asegurar que Firebase siga conectado
     document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && FIREBASE_CONFIG.apiKey && !firebaseConnected) {
-            logSync('Pestaña activa - intentando reconectar...', 'info');
-            inicializarFirebaseRealtime(true);
+        if (!document.hidden && FIREBASE_CONFIG.apiKey && !userManuallyDisconnected) {
+            if (db) {
+                try {
+                    db.goOnline();
+                    logSync('Pestaña activa - conexión verificada', 'info');
+                } catch(e) {}
+            } else {
+                inicializarFirebaseRealtime();
+            }
         }
     });
 
-    // Detectar cuando vuelve la conexión a internet
+    // Cuando vuelve internet, Firebase se reconectará solo, pero forzamos por si acaso
     window.addEventListener('online', () => {
-        if (FIREBASE_CONFIG.apiKey && !firebaseConnected) {
-            logSync('Conexión a internet restaurada', 'success');
-            syncRetryCount = 0;
-            inicializarFirebaseRealtime(true);
+        if (FIREBASE_CONFIG.apiKey && !userManuallyDisconnected) {
+            logSync('🌐 Internet restaurado', 'success');
+            reconnectAttempts = 0;
+            if (db) {
+                try { db.goOnline(); } catch(e) {}
+            } else {
+                inicializarFirebaseRealtime();
+            }
         }
     });
 
     window.addEventListener('offline', () => {
         firebaseConnected = false;
-        logSync('Sin conexión a internet', 'error');
-        actualizarIndicadorConexion();
+        logSync('📴 Sin internet (Firebase reintentará al volver)', 'warning');
+        actualizarIndicadorConexion('syncing');
+        actualizarPillsEstado();
+    });
+
+    // Antes de cerrar la página, limpiar el heartbeat
+    window.addEventListener('beforeunload', () => {
+        detenerHeartbeat();
     });
 });
 </script>
