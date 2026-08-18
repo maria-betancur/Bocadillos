@@ -56,6 +56,24 @@ header nav a { color: var(--text-dark); text-decoration: none; font-size: 13px; 
 header nav a:hover, header nav a.active { background: var(--primary); color: white; }
 .top-bar-buttons button { background: white; border: 1px solid var(--gray-border); color: var(--text-dark); padding: 10px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; }
 
+.connection-indicator {
+    position: fixed; top: calc(8px + var(--safe-top)); right: 8px; z-index: 200;
+    display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+    background: rgba(255,255,255,0.95); border-radius: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1); font-size: 11px; font-weight: 700;
+    transition: all 0.3s; cursor: pointer;
+}
+.connection-indicator.connected { border: 2px solid var(--success); color: var(--success); }
+.connection-indicator.disconnected { border: 2px solid var(--danger); color: var(--danger); }
+.connection-indicator.syncing { border: 2px solid var(--warning); color: #b45309; }
+.connection-indicator .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+}
+.connection-indicator.connected .dot { background: var(--success); animation: pulse 2s infinite; }
+.connection-indicator.disconnected .dot { background: var(--danger); }
+.connection-indicator.syncing .dot { background: var(--warning); animation: pulse 0.8s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
 main { max-width: 1200px; margin: 0 auto; padding: 20px 15px; }
 .promo-banner { background: rgba(255,255,255,0.95); border-radius: var(--border-radius-base); padding: 30px 20px; margin-bottom: 25px; text-align: center; box-shadow: var(--shadow-base); }
 .promo-banner h1 { margin: 0 0 10px 0; font-size: 26px; font-weight: 800; color: var(--primary); }
@@ -120,7 +138,6 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px 15px; }
 .empty-catalog strong { display: block; font-size: 14px; color: var(--text-dark); margin-top: 8px; }
 .empty-catalog small { font-size: 12px; line-height: 1.6; display: block; margin-top: 4px; }
 
-/* 🛒 CARRITO VERDE - ANGOSTO PARA MÓVIL */
 .cart-toggle-btn { position: fixed; bottom: calc(20px + var(--safe-bottom)); right: 20px; background: var(--primary); color: white; border: none; width: 56px; height: 56px; border-radius: 50%; cursor: pointer; box-shadow: 0 8px 30px var(--primary-glow); z-index: 99; font-size: 22px; }
 .cart-count { position: absolute; top: -2px; right: -2px; background: var(--accent); color: white; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid white; }
 .cart { position: fixed; right: -110%; top: 0; width: 300px; max-width: 88vw; height: 100%; background: white; padding: calc(20px + var(--safe-top)) 16px calc(16px + var(--safe-bottom)); overflow-y: auto; z-index: 101; transition: right 0.35s; box-shadow: -15px 0 40px rgba(22, 101, 52, 0.18); border-left: 3px solid var(--primary); }
@@ -188,9 +205,11 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 .sync-btn.warning { background: var(--warning); color: white; }
 .sync-btn.secondary { background: var(--accent); color: white; }
 .sync-btn.ghost { background: var(--gray-light); color: var(--text-dark); border: 1px solid var(--gray-border); }
+.sync-btn.danger { background: var(--danger); color: white; }
 
 .toast-container { position: fixed; top: 15px; right: 15px; left: 15px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
-.toast { background: white; padding: 14px 18px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-left: 4px solid var(--primary); font-weight: 600; font-size: 13px; pointer-events: auto; }
+.toast { background: white; padding: 14px 18px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-left: 4px solid var(--primary); font-weight: 600; font-size: 13px; pointer-events: auto; animation: slideIn 0.3s ease-out; }
+@keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 .toast.success { border-left-color: var(--success); }
 .toast.danger { border-left-color: var(--danger); }
 .toast.warning { border-left-color: var(--warning); }
@@ -233,6 +252,12 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 .status-pill.on { background: #d1fae5; color: #065f46; }
 .status-pill.off { background: #fee2e2; color: #991b1b; }
 
+.sync-log { background: #f8fafc; border-radius: 10px; padding: 12px; margin-top: 12px; max-height: 200px; overflow-y: auto; font-size: 11px; font-family: monospace; }
+.sync-log-entry { padding: 4px 0; border-bottom: 1px solid #e2e8f0; display: flex; gap: 8px; }
+.sync-log-entry .time { color: #94a3b8; flex-shrink: 0; }
+.sync-log-entry.error { color: var(--danger); }
+.sync-log-entry.success { color: var(--success); }
+
 @media (min-width: 768px) { .container { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } }
 
 @media (max-width: 700px) {
@@ -247,6 +272,11 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 <body>
 
 <div class="toast-container" id="toastContainer"></div>
+
+<div class="connection-indicator disconnected" id="connectionIndicator" onclick="mostrarEstadoConexion()" title="Estado de conexión">
+    <span class="dot"></span>
+    <span id="connectionText">Sin conexión</span>
+</div>
 
 <header>
     <div class="brand" id="storeNameView">DEGUSTASE</div>
@@ -387,17 +417,26 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                     <div class="dashboard-card">
                         <h4>🔥 Firebase (Base de Datos en Tiempo Real)</h4>
                         <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
-                            Para que el catálogo, los textos y colores se vean <strong>al instante en todos los dispositivos</strong>, ingresa la API Key y la Database URL de tu proyecto de Firebase. No agregues <code>/datos</code> a la URL.
+                            Para que el catálogo, los textos y colores se vean <strong>al instante en todos los dispositivos</strong>, ingresa la API Key y la Database URL de tu proyecto de Firebase.
+                            <br><br>
+                            <strong style="color:var(--danger);">⚠️ IMPORTANTE:</strong> En Firebase Console → Realtime Database → Reglas, asegúrate de tener:
                         </p>
+                        <pre style="background:#1e293b; color:#e2e8f0; padding:12px; border-radius:8px; font-size:11px; overflow-x:auto; margin:10px 0;">{
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}</pre>
                         <div class="form-group">
                             <label>API Key</label>
                             <input type="text" id="cfgFirebaseApiKey" placeholder="AIzaSy...">
                         </div>
                         <div class="form-group">
                             <label>Database URL</label>
-                            <input type="text" id="cfgFirebaseUrl" placeholder="https://degustase-1eb19-default-rtdb.firebaseio.com">
+                            <input type="text" id="cfgFirebaseUrl" placeholder="https://tu-proyecto-default-rtdb.firebaseio.com">
                         </div>
                         <button class="sync-btn primary" onclick="guardarConfigFirebase()">💾 Guardar y Conectar</button>
+                        <button class="sync-btn danger" onclick="desconectarFirebase()" style="margin-top:5px;">🔌 Desconectar Firebase</button>
                         <div id="firebaseStatus" style="margin-top:10px; font-size:12px;"></div>
                     </div>
 
@@ -430,7 +469,14 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                         <h4>🔄 Acciones de Nube</h4>
                         <button class="sync-btn primary" onclick="subirDatosANube()">⬆️ Subir catálogo a Firebase</button>
                         <button class="sync-btn secondary" onclick="descargarDatosDeNube()">⬇️ Descargar catálogo de Firebase</button>
-                        <p style="font-size:11px; color:#64748b; margin:8px 0 0 0;">💡 Los cambios que hagas (productos, categorías, textos y colores) se suben automáticamente si Firebase está conectado.</p>
+                        <button class="sync-btn warning" onclick="forzarDescarga()">⚡ Forzar descarga (ignorar versión local)</button>
+                        <p style="font-size:11px; color:#64748b; margin:8px 0 0 0;">💡 Los cambios se suben automáticamente si Firebase está conectado. Usa "Forzar descarga" si ves datos desactualizados.</p>
+                    </div>
+                    <div class="dashboard-card">
+                        <h4>📋 Registro de Sincronización</h4>
+                        <div class="sync-log" id="syncLog">
+                            <div class="sync-log-entry"><span class="time">--:--:--</span><span>Sin eventos aún</span></div>
+                        </div>
                     </div>
                 </div>
 
@@ -563,12 +609,17 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 let savedFirebaseConfig = JSON.parse(localStorage.getItem('degustase_firebase') || 'null');
 let FIREBASE_CONFIG = {
     apiKey: savedFirebaseConfig?.apiKey || '',
-    databaseURL: savedFirebaseConfig?.databaseURL || 'https://degustase-1eb19-default-rtdb.firebaseio.com'
+    databaseURL: savedFirebaseConfig?.databaseURL || ''
 };
 let IMGBB_CONFIG = JSON.parse(localStorage.getItem('degustase_imgbb') || 'null') || { apiKey: '' };
 
 let db = null;
-let firebaseUnsubscribe = null;
+let firebaseRef = null;
+let firebaseConnected = false;
+let firebaseListenerActive = false;
+let syncRetryCount = 0;
+let syncRetryTimer = null;
+const MAX_SYNC_RETRIES = 5;
 
 /* ================= 🧠 DATOS ================= */
 const TIENDA_DEFAULTS = {
@@ -616,239 +667,308 @@ function guardarLocal() {
     }
 }
 
-/* ================= 🔥 FIREBASE ================= */
+/* ================= 📋 REGISTRO DE SINCRONIZACIÓN ================= */
+function logSync(message, type = 'info') {
+    const log = document.getElementById('syncLog');
+    if (!log) return;
+    const now = new Date();
+    const time = now.toLocaleTimeString('es-CO');
+    const entry = document.createElement('div');
+    entry.className = `sync-log-entry ${type}`;
+    entry.innerHTML = `<span class="time">${time}</span><span>${message}</span>`;
+    log.insertBefore(entry, log.firstChild);
+    if (log.children.length > 50) log.removeChild(log.lastChild);
+}
 
-function inicializarFirebaseRealtime() {
+/* ================= 🔥 FIREBASE - CONEXIÓN ROBUSTA ================= */
 
-    // Verificar configuración
+function desconectarFirebase() {
+    if (firebaseRef) {
+        try { firebaseRef.off(); } catch(e) {}
+        firebaseRef = null;
+    }
+    db = null;
+    firebaseConnected = false;
+    firebaseListenerActive = false;
+    if (syncRetryTimer) { clearTimeout(syncRetryTimer); syncRetryTimer = null; }
+    syncRetryCount = 0;
+    localStorage.removeItem('degustase_firebase');
+    FIREBASE_CONFIG.apiKey = '';
+    FIREBASE_CONFIG.databaseURL = '';
+    document.getElementById('cfgFirebaseApiKey').value = '';
+    document.getElementById('cfgFirebaseUrl').value = '';
+    document.getElementById('firebaseStatus').innerHTML = '<span style="color:#64748b;">🔌 Firebase desconectado</span>';
+    actualizarPillsEstado();
+    actualizarIndicadorConexion();
+    logSync('Firebase desconectado manualmente', 'info');
+    showToast('🔌 Firebase desconectado', 'warning');
+}
+
+function inicializarFirebaseRealtime(forceReconnect = false) {
     if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.databaseURL) {
-
-        if (firebaseUnsubscribe) {
-            try {
-                firebaseUnsubscribe();
-            } catch (e) {
-                console.warn("No se pudo cancelar el listener anterior:", e);
-            }
-
-            firebaseUnsubscribe = null;
-        }
-
-        db = null;
-        actualizarPillsEstado();
+        logSync('No hay configuración de Firebase', 'error');
+        actualizarIndicadorConexion();
         return;
     }
 
     try {
+        // Limpiar listener anterior
+        if (firebaseRef) {
+            try { firebaseRef.off(); } catch(e) {}
+            firebaseRef = null;
+        }
 
-        // Inicializar Firebase solamente una vez
+        // Inicializar Firebase app si no existe
         if (!firebase.apps.length) {
-
             firebase.initializeApp({
                 apiKey: FIREBASE_CONFIG.apiKey,
                 databaseURL: FIREBASE_CONFIG.databaseURL
             });
-
+            logSync('Firebase App inicializado', 'success');
         }
 
-        // Obtener Realtime Database
         db = firebase.database();
+        firebaseRef = db.ref("datos");
 
-
-        // Eliminar listener anterior si existe
-        if (firebaseUnsubscribe) {
-
-            try {
-                firebaseUnsubscribe();
-            } catch (e) {
-                console.warn(
-                    "No se pudo eliminar el listener anterior:",
-                    e
-                );
+        // Configurar reconexión automática
+        db.ref('.info/connected').on('value', (snap) => {
+            const connected = snap.val() === true;
+            if (connected && !firebaseConnected) {
+                firebaseConnected = true;
+                logSync('Conexión a Firebase establecida', 'success');
+                actualizarIndicadorConexion();
+                syncRetryCount = 0;
+            } else if (!connected && firebaseConnected) {
+                firebaseConnected = false;
+                logSync('Desconectado de Firebase', 'error');
+                actualizarIndicadorConexion();
+                intentarReconexion();
             }
+        });
 
-            firebaseUnsubscribe = null;
-        }
-
-
-        // Referencia principal de la base de datos
-        const ref = db.ref("datos");
-
-
-        // ===============================
-        // 📥 RECIBIR DATOS DE FIREBASE
-        // ===============================
-
-        const callbackFirebase = (snapshot) => {
-
-            if (!snapshot) {
-                console.error("Firebase devolvió un snapshot undefined");
-                showToast("❌ Firebase no devolvió datos.", "danger");
-                return;
-            }
-
-            if (typeof snapshot.val !== "function") {
-                console.error("Snapshot de Firebase inválido:", snapshot);
-                showToast("❌ Respuesta inválida de Firebase.", "danger");
-                return;
-            }
-
-            const datos = snapshot.val();
-
-            console.log("🔥 Datos recibidos de Firebase:", datos);
-
-            // Si la base está vacía
-            if (!datos) {
-                console.log("🔥 Firebase conectado correctamente, pero todavía no hay datos.");
-                const st = document.getElementById('firebaseStatus');
-                if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado. Aún no hay datos en la nube: pulsa "Subir catálogo a Firebase" en ☁️ Sincronización.</span>';
-                actualizarPillsEstado();
-                return;
-            }
-
-            if (datos.productos) {
-
-                const ultimaLocal = parseInt(
-                    localStorage.getItem("degustase_last_push") || "0"
-                );
-
-                // Evitar sobrescribir cambios locales
-                if (
-                    datos.ultimaActualizacion &&
-                    datos.ultimaActualizacion <= ultimaLocal
-                ) {
-                    return;
-                }
-
-                productos = Array.isArray(datos.productos)
-                    ? datos.productos
-                    : Object.values(datos.productos);
-
-                productos.forEach((p) => {
-                    if (!p.id) { p.id = genId(); }
-                    if (!Array.isArray(p.imagenes)) {
-                        p.imagenes = p.imagenes ? [p.imagenes] : [];
-                    }
-                });
-
-                if (datos.categorias) {
-                    categorias = Array.isArray(datos.categorias)
-                        ? datos.categorias
-                        : Object.values(datos.categorias);
-                }
-
-                if (datos.tiendaConfig) {
-                    tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
-                }
-
-                guardarLocal();
-                prepararCacheBusqueda();
-                aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
-                syncTiendaUI();
-                poblarInputsPersonalizacion();
-                renderProductos();
-                renderSelectCategorias();
-                renderCategoriasAdmin();
-                renderNavCategorias();
-                actualizarEstadisticas();
-
-                const adminPanel = document.getElementById("adminPanel");
-                if (adminPanel && adminPanel.style.display === "flex") {
-                    renderCatalogo();
-                }
-            }
-
-        };
-
-
-        // ===============================
-        // ❌ MANEJAR ERRORES DE FIREBASE
-        // ===============================
-
-        const errorFirebase = (error) => {
-
-            console.error("🔥 Error de Firebase:", error);
-
-            let mensaje = "Error de conexión con Firebase";
-
-            if (error && error.message) {
-                mensaje += ": " + error.message;
-            }
-
-            showToast("❌ " + mensaje, "danger");
-
-            db = null;
-            actualizarPillsEstado();
-
-        };
-
-
-        // ===============================
-        // 🔄 ESCUCHAR CAMBIOS EN TIEMPO REAL
-        // ===============================
-
-        ref.on("value", callbackFirebase, errorFirebase);
-
-        // Función para cancelar el listener
-        firebaseUnsubscribe = () => {
-            try {
-                ref.off("value", callbackFirebase);
-            } catch (e) {
-                console.warn("No se pudo remover el listener:", e);
-            }
-        };
+        // Escuchar cambios en tiempo real
+        firebaseListenerActive = true;
+        firebaseRef.on('value', (snapshot) => {
+            manejarDatosFirebase(snapshot);
+        }, (error) => {
+            manejarErrorFirebase(error);
+        });
 
         actualizarPillsEstado();
-
-        console.log("🔥 Firebase conectado correctamente:", FIREBASE_CONFIG.databaseURL);
+        actualizarIndicadorConexion();
+        logSync('Listener de Firebase activo', 'success');
 
     } catch (error) {
+        console.error("Error inicializando Firebase:", error);
+        logSync('Error: ' + error.message, 'error');
+        showToast("❌ Error: " + error.message, "danger");
+        actualizarIndicadorConexion();
+        intentarReconexion();
+    }
+}
 
-        console.error("🔥 Error inicializando Firebase:", error);
+function manejarDatosFirebase(snapshot) {
+    if (!snapshot) {
+        logSync('Snapshot vacío de Firebase', 'error');
+        return;
+    }
 
-        showToast("❌ Error inicializando Firebase: " + error.message, "danger");
+    let datos;
+    try {
+        datos = snapshot.val();
+    } catch(e) {
+        logSync('Error al leer snapshot: ' + e.message, 'error');
+        return;
+    }
 
-        db = null;
-        actualizarPillsEstado();
+    if (!datos) {
+        logSync('Firebase vacío - sin datos aún', 'info');
+        const st = document.getElementById('firebaseStatus');
+        if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado. Base vacía. Pulsa "Subir catálogo" para enviar datos.</span>';
+        firebaseConnected = true;
+        actualizarIndicadorConexion();
+        return;
+    }
 
+    // Procesar productos
+    if (datos.productos) {
+        const nuevosProductos = Array.isArray(datos.productos)
+            ? datos.productos
+            : Object.values(datos.productos);
+
+        // Normalizar datos
+        nuevosProductos.forEach((p) => {
+            if (!p.id) p.id = genId();
+            if (!Array.isArray(p.imagenes)) {
+                p.imagenes = p.imagenes ? [p.imagenes] : [];
+            }
+        });
+
+        productos = nuevosProductos;
+        logSync(`${productos.length} productos recibidos de Firebase`, 'success');
+    }
+
+    // Procesar categorías
+    if (datos.categorias) {
+        categorias = Array.isArray(datos.categorias)
+            ? datos.categorias
+            : Object.values(datos.categorias);
+    }
+
+    // Procesar configuración de tienda
+    if (datos.tiendaConfig) {
+        tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
+    }
+
+    // Guardar todo localmente
+    guardarLocal();
+    prepararCacheBusqueda();
+    aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
+    syncTiendaUI();
+    poblarInputsPersonalizacion();
+    renderProductos();
+    renderSelectCategorias();
+    renderCategoriasAdmin();
+    renderNavCategorias();
+    actualizarEstadisticas();
+
+    const adminPanel = document.getElementById("adminPanel");
+    if (adminPanel && adminPanel.style.display === "flex") {
+        renderCatalogo();
+    }
+
+    firebaseConnected = true;
+    actualizarIndicadorConexion();
+}
+
+function manejarErrorFirebase(error) {
+    console.error("Error Firebase:", error);
+    firebaseConnected = false;
+    firebaseListenerActive = false;
+
+    let mensaje = "Error de conexión";
+    if (error && error.code) {
+        switch(error.code) {
+            case 'PERMISSION_DENIED':
+                mensaje = 'Permiso denegado. Verifica las reglas de Firebase';
+                break;
+            case 'NETWORK_ERROR':
+                mensaje = 'Error de red. Verifica tu conexión a internet';
+                break;
+            case 'INVALID_TOKEN':
+                mensaje = 'Token inválido. Revisa tu API Key';
+                break;
+            case 'AUTHENTICATION_DISABLED':
+                mensaje = 'Autenticación deshabilitada en Firebase';
+                break;
+            default:
+                mensaje = error.message || error.code;
+        }
+    } else if (error && error.message) {
+        mensaje = error.message;
+    }
+
+    logSync('Error: ' + mensaje, 'error');
+    showToast("❌ Firebase: " + mensaje, "danger");
+    actualizarPillsEstado();
+    actualizarIndicadorConexion();
+    intentarReconexion();
+}
+
+function intentarReconexion() {
+    if (syncRetryCount >= MAX_SYNC_RETRIES) {
+        logSync('Máximo de reintentos alcanzado. Pulsa "Conectar" manualmente.', 'error');
+        showToast('⚠️ No se pudo reconectar. Intenta manualmente.', 'warning');
+        return;
+    }
+
+    syncRetryCount++;
+    const delay = Math.min(3000 * syncRetryCount, 15000);
+    logSync(`Reintentando en ${delay/1000}s (intento ${syncRetryCount}/${MAX_SYNC_RETRIES})`, 'info');
+    actualizarIndicadorConexion('syncing');
+
+    if (syncRetryTimer) clearTimeout(syncRetryTimer);
+    syncRetryTimer = setTimeout(() => {
+        logSync('Reintentando conexión...', 'info');
+        inicializarFirebaseRealtime(true);
+    }, delay);
+}
+
+function actualizarIndicadorConexion(estado) {
+    const indicator = document.getElementById('connectionIndicator');
+    const text = document.getElementById('connectionText');
+    if (!indicator || !text) return;
+
+    const estadoReal = estado || (firebaseConnected ? 'connected' : (FIREBASE_CONFIG.apiKey ? 'syncing' : 'disconnected'));
+
+    indicator.className = 'connection-indicator ' + estadoReal;
+    switch(estadoReal) {
+        case 'connected':
+            text.textContent = 'Conectado';
+            break;
+        case 'syncing':
+            text.textContent = 'Conectando...';
+            break;
+        case 'disconnected':
+            text.textContent = 'Sin conexión';
+            break;
+    }
+}
+
+function mostrarEstadoConexion() {
+    if (firebaseConnected) {
+        showToast('✅ Firebase conectado. Sincronización en tiempo real activa.', 'success');
+    } else if (FIREBASE_CONFIG.apiKey) {
+        showToast('🔄 Intentando conectar a Firebase...', 'warning');
+        inicializarFirebaseRealtime(true);
+    } else {
+        showToast('⚠️ Firebase no configurado. Ve a Admin → Configuración API', 'warning');
     }
 }
 
 async function subirDatosANube() {
-    if (!db) {
-        showToast("⚠️ Configura Firebase primero (pestaña Configuración API)", "warning");
+    if (!db || !firebaseRef) {
+        showToast("⚠️ Configura Firebase primero", "warning");
+        logSync('Error: Firebase no configurado', 'error');
         return;
     }
     try {
+        actualizarIndicadorConexion('syncing');
+        logSync('Subiendo datos a Firebase...', 'info');
         showToast("📤 Subiendo a Firebase...", "success");
+
         const ahora = Date.now();
         localStorage.setItem('degustase_last_push', ahora.toString());
-        await db.ref("datos").set({
+
+        await firebaseRef.set({
             productos,
             categorias,
             tiendaConfig,
             ultimaActualizacion: ahora
         });
+
+        logSync('Datos subidos correctamente', 'success');
         showToast("✅ Catálogo guardado en la nube", "success");
         actualizarEstadisticas();
+        actualizarIndicadorConexion();
     } catch (error) {
-        showToast("❌ Error: " + error.message, "danger");
+        logSync('Error al subir: ' + (error.message || error), 'error');
+        showToast("❌ Error: " + (error.message || 'Desconocido'), "danger");
+        actualizarIndicadorConexion();
     }
 }
 
 async function descargarDatosDeNube() {
-    if (!db) {
+    if (!db || !firebaseRef) {
         showToast("⚠️ Configura Firebase primero", "warning");
         return;
     }
     try {
+        actualizarIndicadorConexion('syncing');
+        logSync('Descargando datos de Firebase...', 'info');
         showToast("📥 Descargando de Firebase...", "success");
 
-        const snapshot = await db.ref("datos").once("value");
-
-        if (!snapshot || typeof snapshot.val !== "function") {
-            throw new Error("Firebase no devolvió un snapshot válido.");
-        }
-
+        const snapshot = await firebaseRef.once("value");
         const datos = snapshot.val();
 
         if (datos && datos.productos) {
@@ -871,12 +991,83 @@ async function descargarDatosDeNube() {
             renderNavCategorias();
             renderCatalogo();
             actualizarEstadisticas();
+            logSync(`${productos.length} productos descargados`, 'success');
             showToast(`✅ ${productos.length} productos descargados`, "success");
         } else {
+            logSync('No hay datos en Firebase', 'info');
             showToast("ℹ️ No hay datos en Firebase aún", "warning");
         }
+        actualizarIndicadorConexion();
     } catch (error) {
-        showToast("❌ Error: " + error.message, "danger");
+        logSync('Error al descargar: ' + (error.message || error), 'error');
+        showToast("❌ Error: " + (error.message || 'Desconocido'), "danger");
+        actualizarIndicadorConexion();
+    }
+}
+
+async function forzarDescarga() {
+    if (!db || !firebaseRef) {
+        showToast("⚠️ Configura Firebase primero", "warning");
+        return;
+    }
+    if (!confirm("¿Forzar descarga? Esto reemplazará los datos locales con los de Firebase.")) return;
+
+    try {
+        actualizarIndicadorConexion('syncing');
+        logSync('Forzando descarga desde Firebase...', 'info');
+        showToast("⚡ Forzando descarga...", "success");
+
+        // Eliminar listener temporalmente
+        firebaseRef.off();
+
+        const snapshot = await firebaseRef.once("value");
+        const datos = snapshot.val();
+
+        if (datos && datos.productos) {
+            productos = Array.isArray(datos.productos) ? datos.productos : Object.values(datos.productos);
+            productos.forEach(p => {
+                if (!p.id) p.id = genId();
+                if (!Array.isArray(p.imagenes)) p.imagenes = p.imagenes ? [p.imagenes] : [];
+            });
+            if (datos.categorias) categorias = Array.isArray(datos.categorias) ? datos.categorias : Object.values(datos.categorias);
+            if (datos.tiendaConfig) tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
+
+            guardarLocal();
+            prepararCacheBusqueda();
+            aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
+            syncTiendaUI();
+            poblarInputsPersonalizacion();
+            renderProductos();
+            renderSelectCategorias();
+            renderCategoriasAdmin();
+            renderNavCategorias();
+            renderCatalogo();
+            actualizarEstadisticas();
+            logSync(`Descarga forzada: ${productos.length} productos`, 'success');
+            showToast(`✅ ${productos.length} productos descargados`, "success");
+        } else {
+            logSync('Firebase vacío en descarga forzada', 'info');
+            showToast("ℹ️ No hay datos en Firebase", "warning");
+        }
+
+        // Reactivar listener
+        firebaseRef.on('value', (snapshot) => {
+            manejarDatosFirebase(snapshot);
+        }, (error) => {
+            manejarErrorFirebase(error);
+        });
+
+        actualizarIndicadorConexion();
+    } catch (error) {
+        logSync('Error en descarga forzada: ' + (error.message || error), 'error');
+        showToast("❌ Error: " + (error.message || 'Desconocido'), "danger");
+        // Reactivar listener incluso si falla
+        firebaseRef.on('value', (snapshot) => {
+            manejarDatosFirebase(snapshot);
+        }, (error) => {
+            manejarErrorFirebase(error);
+        });
+        actualizarIndicadorConexion();
     }
 }
 
@@ -892,7 +1083,9 @@ function guardarConfigFirebase() {
     localStorage.setItem('degustase_firebase', JSON.stringify(FIREBASE_CONFIG));
     document.getElementById('firebaseStatus').innerHTML = '<span style="color:var(--success);">✅ Conectando a Firebase...</span>';
     showToast("✅ Configuración guardada", "success");
-    inicializarFirebaseRealtime();
+    logSync('Configuración Firebase guardada', 'success');
+    syncRetryCount = 0;
+    inicializarFirebaseRealtime(true);
 }
 
 function guardarConfigImgBB() {
@@ -912,7 +1105,8 @@ function actualizarPillsEstado() {
     const pf = document.getElementById('pillFirebase');
     const pi = document.getElementById('pillImgbb');
     if (pf) {
-        if (db) { pf.className = 'status-pill on'; pf.textContent = '🔥 Firebase: conectado'; }
+        if (firebaseConnected) { pf.className = 'status-pill on'; pf.textContent = '🔥 Firebase: conectado'; }
+        else if (FIREBASE_CONFIG.apiKey) { pf.className = 'status-pill off'; pf.textContent = '🔥 Firebase: conectando...'; }
         else { pf.className = 'status-pill off'; pf.textContent = '🔥 Firebase: desconectado'; }
     }
     if (pi) {
@@ -925,7 +1119,10 @@ function actualizarEstadisticas() {
     const size = new Blob([JSON.stringify(productos)]).size;
     const totalImgs = productos.reduce((acc, p) => acc + ((p.imagenes && p.imagenes.length) || 0), 0);
     const el = document.getElementById('statsInfo');
-    if (el) el.innerHTML = `📦 <strong>${productos.length}</strong> productos | 🖼️ <strong>${totalImgs}</strong> imágenes | 💾 <strong>${(size/1024).toFixed(1)} KB</strong> | ${db ? '☁️ Sincronizado' : '📴 Solo local'}`;
+    if (el) {
+        const estado = firebaseConnected ? '☁️ Sincronizado en tiempo real' : (FIREBASE_CONFIG.apiKey ? '🔄 Conectando...' : '📴 Solo local');
+        el.innerHTML = `📦 <strong>${productos.length}</strong> productos | 🖼️ <strong>${totalImgs}</strong> imágenes | 💾 <strong>${(size/1024).toFixed(1)} KB</strong> | ${estado}`;
+    }
 }
 
 /* ================= 🖼️ IMÁGENES (IMGBB + RESPALDO LOCAL) ================= */
@@ -1144,7 +1341,7 @@ async function guardarPersonalizacion() {
     syncTiendaUI();
     guardarLocal();
     showToast("✅ Personalización guardada", "success");
-    if (db) await subirDatosANube();
+    if (firebaseConnected) await subirDatosANube();
 }
 
 function restaurarPersonalizacion() {
@@ -1161,7 +1358,7 @@ function restaurarPersonalizacion() {
     syncTiendaUI();
     guardarLocal();
     showToast("↩️ Valores restaurados", "warning");
-    if (db) subirDatosANube();
+    if (firebaseConnected) subirDatosANube();
 }
 
 function poblarInputsPersonalizacion() {
@@ -1332,7 +1529,7 @@ async function agregarCategoria() {
     input.value = '';
     renderSelectCategorias(); renderCategoriasAdmin(); renderNavCategorias();
     showToast("✅ Categoría creada", "success");
-    if (db) await subirDatosANube();
+    if (firebaseConnected) await subirDatosANube();
 }
 
 async function eliminarCategoria(i) {
@@ -1346,7 +1543,7 @@ async function eliminarCategoria(i) {
         guardarLocal();
         renderSelectCategorias(); renderCategoriasAdmin(); renderNavCategorias();
         showToast("🗑️ Categoría eliminada", "danger");
-        if (db) await subirDatosANube();
+        if (firebaseConnected) await subirDatosANube();
     }
 }
 
@@ -1396,7 +1593,7 @@ async function guardarNuevoProducto() {
     renderListaImagenesProducto();
 
     showToast(`✅ ${nombre} publicado`, "success");
-    if (db) await subirDatosANube();
+    if (firebaseConnected) await subirDatosANube();
 }
 
 function abrirModalEdicion(index) {
@@ -1473,7 +1670,7 @@ async function guardarEdicionProducto() {
 
     cerrarModalEdicion();
     showToast("✅ Producto actualizado", "success");
-    if (db) await subirDatosANube();
+    if (firebaseConnected) await subirDatosANube();
 }
 
 /* ================= 🔍 DETALLE ================= */
@@ -1604,7 +1801,7 @@ async function eliminarProducto(i) {
         renderProductos();
         renderCatalogo();
         showToast("🗑️ Eliminado", "danger");
-        if (db) await subirDatosANube();
+        if (firebaseConnected) await subirDatosANube();
     }
 }
 
@@ -1819,7 +2016,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.databaseURL) {
         document.getElementById('firebaseStatus').innerHTML = '<span style="color:var(--success);">✅ Conectando automáticamente...</span>';
+        logSync('Iniciando conexión automática a Firebase...', 'info');
         inicializarFirebaseRealtime();
+    } else {
+        logSync('Firebase no configurado', 'info');
     }
 
     if (IMGBB_CONFIG.apiKey) {
@@ -1839,12 +2039,36 @@ window.addEventListener('DOMContentLoaded', () => {
     actualizarCarrito();
     actualizarEstadisticas();
     actualizarPillsEstado();
+    actualizarIndicadorConexion();
 
     document.getElementById('cfgColorPrimario').addEventListener('input', (e) => {
         aplicarColores(e.target.value, document.getElementById('cfgColorAcento').value);
     });
     document.getElementById('cfgColorAcento').addEventListener('input', (e) => {
         aplicarColores(document.getElementById('cfgColorPrimario').value, e.target.value);
+    });
+
+    // Detectar cuando el usuario vuelve a la pestaña (útil para reconectar)
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && FIREBASE_CONFIG.apiKey && !firebaseConnected) {
+            logSync('Pestaña activa - intentando reconectar...', 'info');
+            inicializarFirebaseRealtime(true);
+        }
+    });
+
+    // Detectar cuando vuelve la conexión a internet
+    window.addEventListener('online', () => {
+        if (FIREBASE_CONFIG.apiKey && !firebaseConnected) {
+            logSync('Conexión a internet restaurada', 'success');
+            syncRetryCount = 0;
+            inicializarFirebaseRealtime(true);
+        }
+    });
+
+    window.addEventListener('offline', () => {
+        firebaseConnected = false;
+        logSync('Sin conexión a internet', 'error');
+        actualizarIndicadorConexion();
     });
 });
 </script>
