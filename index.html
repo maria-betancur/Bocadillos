@@ -415,7 +415,7 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                     <div class="dashboard-card">
                         <h4>🔥 Firebase (Base de Datos en Tiempo Real)</h4>
                         <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
-                            Una vez conectado, <strong>Firebase permanecerá conectado permanentemente</strong> y se reconectará automáticamente si se pierde la conexión.
+                            Una vez conectado, <strong>Firebase permanecerá conectado permanentemente</strong> y sincronizará el catálogo en todos los dispositivos en tiempo real.
                             <br><br>
                             <strong style="color:var(--danger);">⚠️ Reglas de Firebase</strong> (Firebase Console → Realtime Database → Reglas):
                         </p>
@@ -615,15 +615,14 @@ let FIREBASE_CONFIG = {
 };
 let IMGBB_CONFIG = JSON.parse(localStorage.getItem('degustase_imgbb') || 'null') || { apiKey: '' };
 
+// Estado de Firebase
 let db = null;
-let firebaseRef = null;
+let datosRef = null;              // referencia a /datos
+let connectedRef = null;          // referencia a .info/connected
 let firebaseConnected = false;
-let firebaseListenerActive = false;
-let firebaseInitialized = false;
-let syncRetryTimer = null;
-let heartbeatTimer = null;
-let reconnectAttempts = 0;
-let userManuallyDisconnected = false; // Solo true cuando el usuario pulsa "Desconectar"
+let userManuallyDisconnected = false;
+let persistenceEnabled = false;   // flag para no activar persistencia 2 veces
+let primeraCargaFirebase = true;  // para saber si es la primera vez que llegan datos
 
 /* ================= 🧠 DATOS ================= */
 const TIENDA_DEFAULTS = {
@@ -644,6 +643,7 @@ const PRODUCTOS_DEMO = [
 let productos = JSON.parse(localStorage.getItem('degustase_productos') || 'null') || JSON.parse(JSON.stringify(PRODUCTOS_DEMO));
 let categorias = JSON.parse(localStorage.getItem('degustase_categorias') || 'null') || ['Bocadillos', 'Salados', 'Dulces', 'Bebidas'];
 let tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, JSON.parse(localStorage.getItem('degustase_tienda') || 'null'));
+let ultimaActualizacionLocal = parseInt(localStorage.getItem('degustase_last_push') || '0');
 
 let carrito = [];
 let categoriaActual = "Todos";
@@ -664,6 +664,7 @@ function guardarLocal() {
         localStorage.setItem('degustase_productos', JSON.stringify(productos));
         localStorage.setItem('degustase_categorias', JSON.stringify(categorias));
         localStorage.setItem('degustase_tienda', JSON.stringify(tiendaConfig));
+        localStorage.setItem('degustase_last_push', ultimaActualizacionLocal.toString());
         return true;
     } catch (e) {
         showToast("⚠️ Almacenamiento local lleno", "danger");
@@ -681,29 +682,82 @@ function logSync(message, type = 'info') {
     entry.className = `sync-log-entry ${type}`;
     entry.innerHTML = `<span class="time">${time}</span><span>${message}</span>`;
     log.insertBefore(entry, log.firstChild);
-    if (log.children.length > 50) log.removeChild(log.lastChild);
+    // Limitar a 30 entradas
+    while (log.children.length > 30) log.removeChild(log.lastChild);
 }
 
 /* ================= 🔥 FIREBASE - CONEXIÓN PERMANENTE ================= */
 
 /**
- * Activa la persistencia offline de Firebase (solo una vez por sesión).
- * Esto hace que Firebase mantenga los datos en caché y se reconecte automáticamente.
+ * Obtiene o crea la app de Firebase. Evita el error "Firebase App named '[DEFAULT]' already exists".
  */
-function activarPersistenciaFirebase() {
+function obtenerAppFirebase() {
+    const nombreApp = 'degustase_app';
     try {
-        firebase.database().setPersistenceEnabled(true);
-        firebase.database().setPersistenceCacheSizeBytes(50 * 1024 * 1024); // 50MB
+        // Si ya existe una app con ese nombre, la reutilizamos
+        if (firebase.apps.some(a => a.name === nombreApp)) {
+            return firebase.app(nombreApp);
+        }
+        // Si existe la default pero no tiene la URL correcta, creamos una nueva
+        if (firebase.apps.length > 0) {
+            const defaultApp = firebase.app();
+            if (defaultApp.options.databaseURL === FIREBASE_CONFIG.databaseURL) {
+                return defaultApp;
+            }
+        }
+        // Crear nueva app nombrada
+        return firebase.initializeApp({
+            apiKey: FIREBASE_CONFIG.apiKey,
+            databaseURL: FIREBASE_CONFIG.databaseURL
+        }, nombreApp);
+    } catch (e) {
+        console.warn('obtenerAppFirebase:', e);
+        // Último recurso: devolver la default si existe
+        if (firebase.apps.length > 0) return firebase.app();
+        throw e;
+    }
+}
+
+/**
+ * Activa la persistencia offline UNA SOLA VEZ por sesión.
+ * Debe llamarse ANTES de cualquier otra operación de la base de datos.
+ */
+function activarPersistencia(appInstance) {
+    if (persistenceEnabled) return;
+    try {
+        const database = appInstance.database();
+        database.setPersistenceEnabled(true);
+        database.setPersistenceCacheSizeBytes(50 * 1024 * 1024); // 50MB
+        persistenceEnabled = true;
         logSync('Persistencia offline activada (50MB)', 'success');
     } catch (e) {
-        // Puede fallar si ya está activada, no es crítico
+        // Si ya estaba activada, no es error crítico
+        persistenceEnabled = true;
         console.warn('Persistencia:', e.message);
     }
 }
 
 /**
- * Inicializa Firebase de forma robusta. Una vez conectado, NUNCA se desconecta
- * a menos que el usuario pulse explícitamente "Desconectar".
+ * Limpia todos los listeners previos antes de crear nuevos.
+ */
+function limpiarListenersPrevios() {
+    try {
+        if (datosRef) {
+            datosRef.off();
+        }
+        if (connectedRef) {
+            connectedRef.off();
+        }
+    } catch (e) {
+        console.warn('Error limpiando listeners:', e);
+    }
+    datosRef = null;
+    connectedRef = null;
+}
+
+/**
+ * Inicializa Firebase de forma robusta. Una vez conectado, permanece conectado
+ * y se reconecta automáticamente.
  */
 function inicializarFirebaseRealtime() {
     if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.databaseURL) {
@@ -712,71 +766,61 @@ function inicializarFirebaseRealtime() {
         return;
     }
 
-    // Si el usuario desconectó manualmente, no reconectar automáticamente
     if (userManuallyDisconnected) {
-        logSync('Usuario desconectó manualmente. No se reconectará.', 'info');
+        logSync('Usuario desconectó manualmente', 'info');
         return;
     }
 
     try {
-        // 1. Inicializar app Firebase UNA SOLA VEZ
-        if (!firebaseInitialized) {
-            if (firebase.apps.length === 0) {
-                firebase.initializeApp({
-                    apiKey: FIREBASE_CONFIG.apiKey,
-                    databaseURL: FIREBASE_CONFIG.databaseURL
-                });
-                activarPersistenciaFirebase();
-                logSync('Firebase App inicializado', 'success');
-            }
-            firebaseInitialized = true;
-        }
+        // 1. Limpiar listeners previos
+        limpiarListenersPrevios();
 
-        db = firebase.database();
-        firebaseRef = db.ref("datos");
+        // 2. Obtener o crear la app Firebase
+        const app = obtenerAppFirebase();
+        db = app.database();
 
-        // 2. Mantener la referencia sincronizada SIEMPRE (keepSynced)
-        // Esto fuerza a Firebase a mantener la conexión abierta
-        firebaseRef.keepSynced(true);
-        logSync('keepSynced(true) activado - conexión permanente', 'success');
+        // 3. Activar persistencia (solo la primera vez)
+        activarPersistencia(app);
 
-        // 3. Listener de conexión global de Firebase
-        // Firebase maneja internamente la reconexión con backoff exponencial
-        const connectedRef = db.ref('.info/connected');
+        // 4. Asegurar que Firebase esté online
+        try { db.goOnline(); } catch(e) {}
+
+        // 5. Crear referencias
+        datosRef = db.ref("datos");
+        connectedRef = db.ref(".info/connected");
+
+        // 6. Listener de estado de conexión
         connectedRef.on('value', (snap) => {
             const connected = snap.val() === true;
 
             if (connected && !firebaseConnected) {
                 firebaseConnected = true;
-                reconnectAttempts = 0;
                 logSync('✅ Conectado a Firebase', 'success');
                 actualizarIndicadorConexion('connected');
                 actualizarPillsEstado();
+                actualizarEstadisticas();
 
                 const st = document.getElementById('firebaseStatus');
-                if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado permanentemente. Los cambios se sincronizan en tiempo real.</span>';
+                if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado permanentemente. Sincronización en tiempo real activa.</span>';
             } else if (!connected && firebaseConnected) {
                 firebaseConnected = false;
                 logSync('⚠️ Conexión perdida. Firebase reconectará automáticamente...', 'warning');
                 actualizarIndicadorConexion('syncing');
                 actualizarPillsEstado();
-                // NO hacer nada más - Firebase se reconectará solo
-            } else if (!connected && !firebaseConnected) {
-                // Sigue desconectado - Firebase está intentando reconectar
-                actualizarIndicadorConexion('syncing');
+                actualizarEstadisticas();
+                // NO hacer nada más: Firebase se reconecta solo con backoff exponencial
             }
+        }, (err) => {
+            console.warn('Error listener connected:', err);
         });
 
-        // 4. Listener principal de datos (siempre activo)
-        firebaseListenerActive = true;
-        firebaseRef.on('value', (snapshot) => {
+        // 7. Listener principal de datos (siempre activo)
+        primeraCargaFirebase = true;
+        datosRef.on('value', (snapshot) => {
             manejarDatosFirebase(snapshot);
         }, (error) => {
             manejarErrorFirebase(error);
         });
-
-        // 5. Heartbeat: mantener la conexión viva revisando periódicamente
-        iniciarHeartbeat();
 
         actualizarPillsEstado();
         actualizarIndicadorConexion('syncing');
@@ -786,39 +830,78 @@ function inicializarFirebaseRealtime() {
         console.error("Error inicializando Firebase:", error);
         logSync('Error: ' + error.message, 'error');
         showToast("❌ Error: " + error.message, "danger");
-        // NO poner db = null aquí, reintentar después
-        programarReintencion();
+        firebaseConnected = false;
+        actualizarIndicadorConexion();
+        actualizarPillsEstado();
     }
 }
 
 /**
- * Heartbeat: cada 30 segundos verifica que la conexión siga viva.
- * Si detecta que está desconectado pero debería estar conectado, fuerza reconexión.
+ * Normaliza los datos recibidos de Firebase (arrays vs objetos)
  */
-function iniciarHeartbeat() {
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
-
-    heartbeatTimer = setInterval(() => {
-        if (userManuallyDisconnected) return;
-        if (!FIREBASE_CONFIG.apiKey) return;
-
-        // Si tenemos db pero no estamos conectados, verificar
-        if (db && !firebaseConnected) {
-            try {
-                // Intentar una operación ligera para forzar reconexión
-                db.goOnline();
-                logSync('🔄 goOnline() ejecutado - forzando reconexión', 'info');
-            } catch(e) {
-                console.warn('Heartbeat error:', e);
-            }
-        }
-    }, 30000);
+function normalizarArray(data) {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'object') return Object.values(data);
+    return [];
 }
 
-function detenerHeartbeat() {
-    if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
-        heartbeatTimer = null;
+/**
+ * Aplica los datos recibidos de Firebase al estado local
+ */
+function aplicarDatosFirebase(datos) {
+    if (!datos) return;
+
+    let algoCambio = false;
+
+    // Productos
+    if (datos.productos !== undefined) {
+        const nuevosProductos = normalizarArray(datos.productos);
+        nuevosProductos.forEach((p) => {
+            if (!p.id) p.id = genId();
+            if (!Array.isArray(p.imagenes)) {
+                p.imagenes = p.imagenes ? [p.imagenes] : [];
+            }
+        });
+        productos = nuevosProductos;
+        algoCambio = true;
+    }
+
+    // Categorías
+    if (datos.categorias !== undefined) {
+        categorias = normalizarArray(datos.categorias);
+        if (categorias.length === 0) categorias = ['General'];
+        algoCambio = true;
+    }
+
+    // Configuración de tienda
+    if (datos.tiendaConfig) {
+        tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
+        algoCambio = true;
+    }
+
+    // Timestamp de última actualización
+    if (datos.ultimaActualizacion) {
+        ultimaActualizacionLocal = datos.ultimaActualizacion;
+        localStorage.setItem('degustase_last_push', ultimaActualizacionLocal.toString());
+    }
+
+    if (algoCambio) {
+        guardarLocal();
+        prepararCacheBusqueda();
+        aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
+        syncTiendaUI();
+        poblarInputsPersonalizacion();
+        renderProductos();
+        renderSelectCategorias();
+        renderCategoriasAdmin();
+        renderNavCategorias();
+        actualizarEstadisticas();
+
+        const adminPanel = document.getElementById("adminPanel");
+        if (adminPanel && adminPanel.style.display === "flex") {
+            renderCatalogo();
+        }
     }
 }
 
@@ -826,10 +909,7 @@ function detenerHeartbeat() {
  * Maneja los datos recibidos de Firebase
  */
 function manejarDatosFirebase(snapshot) {
-    if (!snapshot) {
-        logSync('Snapshot vacío', 'info');
-        return;
-    }
+    if (!snapshot) return;
 
     let datos;
     try {
@@ -840,62 +920,39 @@ function manejarDatosFirebase(snapshot) {
     }
 
     if (!datos) {
-        logSync('Firebase vacío - sin datos aún', 'info');
-        const st = document.getElementById('firebaseStatus');
-        if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado. Base vacía. Pulsa "Subir catálogo" para enviar datos.</span>';
+        // Base vacía
+        if (primeraCargaFirebase) {
+            logSync('Firebase vacío - sin datos aún', 'info');
+            const st = document.getElementById('firebaseStatus');
+            if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado. Base vacía. Pulsa "Subir catálogo" para enviar datos.</span>';
+            primeraCargaFirebase = false;
+        }
         return;
     }
 
-    // Procesar productos
-    if (datos.productos) {
-        const nuevosProductos = Array.isArray(datos.productos)
-            ? datos.productos
-            : Object.values(datos.productos);
-
-        nuevosProductos.forEach((p) => {
-            if (!p.id) p.id = genId();
-            if (!Array.isArray(p.imagenes)) {
-                p.imagenes = p.imagenes ? [p.imagenes] : [];
-            }
-        });
-
-        productos = nuevosProductos;
-        logSync(`${productos.length} productos recibidos`, 'success');
+    // Evitar sobrescribir cambios locales más recientes
+    const tsRemoto = datos.ultimaActualizacion || 0;
+    if (!primeraCargaFirebase && tsRemoto > 0 && tsRemoto < ultimaActualizacionLocal) {
+        // Los datos locales son más recientes, no sobrescribir
+        return;
     }
 
-    if (datos.categorias) {
-        categorias = Array.isArray(datos.categorias)
-            ? datos.categorias
-            : Object.values(datos.categorias);
+    primeraCargaFirebase = false;
+
+    if (primeraCargaFirebase === false && (datos.productos || datos.categorias || datos.tiendaConfig)) {
+        const numProd = datos.productos ? normalizarArray(datos.productos).length : 0;
+        logSync(`📥 ${numProd} productos recibidos de Firebase`, 'success');
     }
 
-    if (datos.tiendaConfig) {
-        tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
-    }
-
-    guardarLocal();
-    prepararCacheBusqueda();
-    aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
-    syncTiendaUI();
-    poblarInputsPersonalizacion();
-    renderProductos();
-    renderSelectCategorias();
-    renderCategoriasAdmin();
-    renderNavCategorias();
-    actualizarEstadisticas();
-
-    const adminPanel = document.getElementById("adminPanel");
-    if (adminPanel && adminPanel.style.display === "flex") {
-        renderCatalogo();
-    }
+    aplicarDatosFirebase(datos);
 }
 
 /**
- * Maneja errores de Firebase SIN desconectar permanentemente.
+ * Maneja errores de Firebase SIN destruir la conexión.
  * Firebase tiene su propio sistema de reintento con backoff exponencial.
  */
 function manejarErrorFirebase(error) {
-    console.warn("Error Firebase (se reintentará automáticamente):", error);
+    console.warn("Error Firebase:", error);
 
     let mensaje = "Error de conexión";
     if (error && error.code) {
@@ -916,55 +973,12 @@ function manejarErrorFirebase(error) {
         mensaje = error.message;
     }
 
-    logSync('⚠️ ' + mensaje + ' (Firebase reintentará)', 'error');
+    logSync('⚠️ ' + mensaje, 'error');
     firebaseConnected = false;
     actualizarPillsEstado();
     actualizarIndicadorConexion('syncing');
-
-    // NO destruir db ni firebaseRef - Firebase se reconectará solo
-    // Solo programar reintento si el error es grave
-    if (error && (error.code === 'INVALID_TOKEN' || error.code === 'PERMISSION_DENIED')) {
-        programarReintencion();
-    }
-}
-
-/**
- * Programa un reintento suave (sin destruir nada)
- */
-function programarReintencion() {
-    if (userManuallyDisconnected) return;
-    if (syncRetryTimer) clearTimeout(syncRetryTimer);
-
-    reconnectAttempts++;
-    // Backoff exponencial con tope de 60 segundos
-    const delay = Math.min(2000 * Math.pow(1.5, Math.min(reconnectAttempts, 10)), 60000);
-
-    logSync(`Reintentando en ${(delay/1000).toFixed(0)}s...`, 'info');
-
-    syncRetryTimer = setTimeout(() => {
-        if (userManuallyDisconnected) return;
-        if (!FIREBASE_CONFIG.apiKey) return;
-
-        try {
-            // Solo re-adjuntar el listener si es necesario
-            if (db && firebaseRef && !firebaseListenerActive) {
-                firebaseRef.on('value', (snapshot) => {
-                    manejarDatosFirebase(snapshot);
-                }, (error) => {
-                    manejarErrorFirebase(error);
-                });
-                firebaseListenerActive = true;
-                logSync('Listener re-adjuntado', 'success');
-            } else if (!db) {
-                // Si db se perdió, reinicializar todo
-                firebaseInitialized = false;
-                inicializarFirebaseRealtime();
-            }
-        } catch(e) {
-            console.warn('Error en reintento:', e);
-            programarReintencion();
-        }
-    }, delay);
+    actualizarEstadisticas();
+    // NO destruir db ni refs: Firebase se reconectará solo
 }
 
 /**
@@ -975,27 +989,18 @@ function desconectarFirebase() {
 
     userManuallyDisconnected = true;
 
-    // Limpiar timers
-    if (syncRetryTimer) { clearTimeout(syncRetryTimer); syncRetryTimer = null; }
-    detenerHeartbeat();
+    // Limpiar listeners
+    limpiarListenersPrevios();
 
-    // Quitar listeners
+    // Intentar desconectar la base de datos
     try {
-        if (firebaseRef) {
-            firebaseRef.keepSynced(false);
-            firebaseRef.off();
-        }
         if (db) {
-            db.ref('.info/connected').off();
+            db.goOffline();
         }
     } catch(e) {}
 
-    firebaseRef = null;
     db = null;
     firebaseConnected = false;
-    firebaseListenerActive = false;
-    firebaseInitialized = false;
-    reconnectAttempts = 0;
 
     // Borrar configuración guardada
     localStorage.removeItem('degustase_firebase');
@@ -1007,7 +1012,8 @@ function desconectarFirebase() {
 
     actualizarPillsEstado();
     actualizarIndicadorConexion();
-    logSync('🔌 Desconectado manualmente por el usuario', 'info');
+    actualizarEstadisticas();
+    logSync('🔌 Desconectado manualmente', 'info');
     showToast('🔌 Firebase desconectado', 'warning');
 }
 
@@ -1021,19 +1027,6 @@ function reconectarManual() {
     }
 
     userManuallyDisconnected = false;
-    reconnectAttempts = 0;
-
-    // Limpiar estado anterior
-    if (syncRetryTimer) { clearTimeout(syncRetryTimer); syncRetryTimer = null; }
-    try {
-        if (firebaseRef) { firebaseRef.off(); }
-        if (db) { db.ref('.info/connected').off(); }
-    } catch(e) {}
-
-    firebaseRef = null;
-    db = null;
-    firebaseConnected = false;
-    firebaseListenerActive = false;
 
     logSync('🔄 Reconexión manual iniciada...', 'info');
     showToast('🔄 Reconectando...', 'success');
@@ -1072,18 +1065,23 @@ function actualizarIndicadorConexion(estado) {
 
 function mostrarEstadoConexion() {
     if (firebaseConnected) {
-        showToast('✅ Firebase conectado permanentemente. Sincronización en tiempo real activa.', 'success');
+        showToast('✅ Firebase conectado. Sincronización en tiempo real activa.', 'success');
     } else if (FIREBASE_CONFIG.apiKey && !userManuallyDisconnected) {
-        showToast('🔄 Firebase está intentando conectarse automáticamente...', 'warning');
+        showToast('🔄 Firebase está intentando conectarse...', 'warning');
+        reconectarManual();
     } else if (userManuallyDisconnected) {
-        showToast('🔌 Desconectado. Ve a Admin → Configuración API para reconectar.', 'warning');
+        showToast('🔌 Desconectado. Ve a Admin → Configuración API.', 'warning');
     } else {
         showToast('⚠️ Firebase no configurado. Ve a Admin → Configuración API', 'warning');
     }
 }
 
+/**
+ * Sube los datos actuales a Firebase.
+ * Si Firebase está conectado pero la escritura falla, queda en cola y se envía al reconectar.
+ */
 async function subirDatosANube() {
-    if (!db || !firebaseRef) {
+    if (!datosRef) {
         showToast("⚠️ Firebase no está conectado", "warning");
         logSync('Error: Firebase no conectado', 'error');
         return;
@@ -1094,15 +1092,16 @@ async function subirDatosANube() {
         showToast("📤 Subiendo a Firebase...", "success");
 
         const ahora = Date.now();
-        localStorage.setItem('degustase_last_push', ahora.toString());
+        ultimaActualizacionLocal = ahora;
 
-        await firebaseRef.set({
+        await datosRef.set({
             productos,
             categorias,
             tiendaConfig,
             ultimaActualizacion: ahora
         });
 
+        localStorage.setItem('degustase_last_push', ahora.toString());
         logSync('✅ Datos subidos correctamente', 'success');
         showToast("✅ Catálogo guardado en la nube", "success");
         actualizarEstadisticas();
@@ -1113,7 +1112,7 @@ async function subirDatosANube() {
 }
 
 async function descargarDatosDeNube() {
-    if (!db || !firebaseRef) {
+    if (!datosRef) {
         showToast("⚠️ Firebase no está conectado", "warning");
         return;
     }
@@ -1122,31 +1121,14 @@ async function descargarDatosDeNube() {
         logSync('Descargando datos...', 'info');
         showToast("📥 Descargando de Firebase...", "success");
 
-        const snapshot = await firebaseRef.once("value");
+        const snapshot = await datosRef.once("value");
         const datos = snapshot.val();
 
-        if (datos && datos.productos) {
-            productos = Array.isArray(datos.productos) ? datos.productos : Object.values(datos.productos);
-            productos.forEach(p => {
-                if (!p.id) p.id = genId();
-                if (!Array.isArray(p.imagenes)) p.imagenes = p.imagenes ? [p.imagenes] : [];
-            });
-            if (datos.categorias) categorias = Array.isArray(datos.categorias) ? datos.categorias : Object.values(datos.categorias);
-            if (datos.tiendaConfig) tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
-
-            guardarLocal();
-            prepararCacheBusqueda();
-            aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
-            syncTiendaUI();
-            poblarInputsPersonalizacion();
-            renderProductos();
-            renderSelectCategorias();
-            renderCategoriasAdmin();
-            renderNavCategorias();
-            renderCatalogo();
-            actualizarEstadisticas();
-            logSync(`✅ ${productos.length} productos descargados`, 'success');
-            showToast(`✅ ${productos.length} productos descargados`, "success");
+        if (datos && (datos.productos || datos.categorias || datos.tiendaConfig)) {
+            aplicarDatosFirebase(datos);
+            const numProd = productos.length;
+            logSync(`✅ ${numProd} productos descargados`, 'success');
+            showToast(`✅ ${numProd} productos descargados`, "success");
         } else {
             logSync('No hay datos en Firebase', 'info');
             showToast("ℹ️ No hay datos en Firebase aún", "warning");
@@ -1158,7 +1140,7 @@ async function descargarDatosDeNube() {
 }
 
 async function forzarDescarga() {
-    if (!db || !firebaseRef) {
+    if (!datosRef) {
         showToast("⚠️ Firebase no está conectado", "warning");
         return;
     }
@@ -1169,17 +1151,32 @@ async function forzarDescarga() {
         logSync('Forzando descarga...', 'info');
         showToast("⚡ Forzando descarga...", "success");
 
-        const snapshot = await firebaseRef.once("value");
+        // Ignorar timestamp local
+        const snapshot = await datosRef.once("value");
         const datos = snapshot.val();
 
-        if (datos && datos.productos) {
-            productos = Array.isArray(datos.productos) ? datos.productos : Object.values(datos.productos);
-            productos.forEach(p => {
-                if (!p.id) p.id = genId();
-                if (!Array.isArray(p.imagenes)) p.imagenes = p.imagenes ? [p.imagenes] : [];
-            });
-            if (datos.categorias) categorias = Array.isArray(datos.categorias) ? datos.categorias : Object.values(datos.categorias);
-            if (datos.tiendaConfig) tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
+        if (datos && (datos.productos || datos.categorias || datos.tiendaConfig)) {
+            // Forzar aplicación sin verificar timestamp
+            if (datos.productos !== undefined) {
+                const nuevosProductos = normalizarArray(datos.productos);
+                nuevosProductos.forEach((p) => {
+                    if (!p.id) p.id = genId();
+                    if (!Array.isArray(p.imagenes)) {
+                        p.imagenes = p.imagenes ? [p.imagenes] : [];
+                    }
+                });
+                productos = nuevosProductos;
+            }
+            if (datos.categorias !== undefined) {
+                categorias = normalizarArray(datos.categorias);
+                if (categorias.length === 0) categorias = ['General'];
+            }
+            if (datos.tiendaConfig) {
+                tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
+            }
+            if (datos.ultimaActualizacion) {
+                ultimaActualizacionLocal = datos.ultimaActualizacion;
+            }
 
             guardarLocal();
             prepararCacheBusqueda();
@@ -1215,9 +1212,7 @@ function guardarConfigFirebase() {
     FIREBASE_CONFIG.databaseURL = url.replace(/\/$/, '');
     localStorage.setItem('degustase_firebase', JSON.stringify(FIREBASE_CONFIG));
 
-    // Resetear estado de desconexión manual
     userManuallyDisconnected = false;
-    reconnectAttempts = 0;
 
     document.getElementById('firebaseStatus').innerHTML = '<span style="color:var(--success);">✅ Conectando a Firebase...</span>';
     showToast("✅ Configuración guardada", "success");
@@ -1244,7 +1239,7 @@ function actualizarPillsEstado() {
     if (pf) {
         if (firebaseConnected) {
             pf.className = 'status-pill on';
-            pf.textContent = '🔥 Firebase: conectado permanente';
+            pf.textContent = '🔥 Firebase: conectado';
         } else if (FIREBASE_CONFIG.apiKey && !userManuallyDisconnected) {
             pf.className = 'status-pill off';
             pf.textContent = '🔥 Firebase: reconectando...';
@@ -1265,7 +1260,7 @@ function actualizarEstadisticas() {
     const el = document.getElementById('statsInfo');
     if (el) {
         let estado;
-        if (firebaseConnected) estado = '☁️ Conectado permanentemente';
+        if (firebaseConnected) estado = '☁️ Conectado - sincronizado en tiempo real';
         else if (FIREBASE_CONFIG.apiKey && !userManuallyDisconnected) estado = '🔄 Reconectando automáticamente...';
         else if (userManuallyDisconnected) estado = '🔌 Desconectado manualmente';
         else estado = '📴 No configurado';
@@ -1541,7 +1536,7 @@ function formatearPrecio(n) {
 
 function prepararCacheBusqueda() {
     productos.forEach(p => {
-        p._cache = (p.nombre + ' ' + p.categoria).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        p._cache = ((p.nombre || '') + ' ' + (p.categoria || '')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     });
 }
 
@@ -1632,16 +1627,23 @@ function irImagenCard(cardId, idx) {
 
 function renderSelectCategorias() {
     const sel = document.getElementById('prodCategoria');
-    sel.innerHTML = '';
-    categorias.forEach(c => {
-        const o = document.createElement('option');
-        o.value = c; o.textContent = c;
-        sel.appendChild(o);
+    const selEdit = document.getElementById('editCategoria');
+    [sel, selEdit].forEach(s => {
+        if (!s) return;
+        const valorActual = s.value;
+        s.innerHTML = '';
+        categorias.forEach(c => {
+            const o = document.createElement('option');
+            o.value = c; o.textContent = c;
+            s.appendChild(o);
+        });
+        if (valorActual && categorias.includes(valorActual)) s.value = valorActual;
     });
 }
 
 function renderCategoriasAdmin() {
     const grid = document.getElementById('categoriasGrid');
+    if (!grid) return;
     grid.innerHTML = '';
     categorias.forEach((c, i) => {
         const count = productos.filter(p => p.categoria === c).length;
@@ -1959,7 +1961,7 @@ function filtrarTablaCatalogo(q) {
         const p = productos[i];
         const row = document.getElementById(`row-${i}`);
         if (row) {
-            row.style.display = (p.nombre.toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q)) ? '' : 'none';
+            row.style.display = ((p.nombre || '').toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q)) ? '' : 'none';
         }
     }
 }
@@ -2119,6 +2121,7 @@ function verificarPassword() {
         document.getElementById('adminPanel').style.display = 'flex';
         actualizarEstadisticas();
         actualizarPillsEstado();
+        renderCatalogo();
     } else {
         showToast("❌ PIN incorrecto", "danger");
     }
@@ -2162,9 +2165,9 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cfgFirebaseUrl').value = FIREBASE_CONFIG.databaseURL;
     document.getElementById('cfgFirebaseApiKey').value = FIREBASE_CONFIG.apiKey;
 
-    // Si hay configuración guardada, conectar AUTOMÁTICAMENTE
+    // Si hay configuración guardada, conectar automáticamente
     if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.databaseURL) {
-        userManuallyDisconnected = false; // Asegurar que no esté bloqueado
+        userManuallyDisconnected = false;
         document.getElementById('firebaseStatus').innerHTML = '<span style="color:var(--success);">✅ Conectando automáticamente...</span>';
         logSync('Iniciando conexión automática a Firebase...', 'info');
         inicializarFirebaseRealtime();
@@ -2198,25 +2201,21 @@ window.addEventListener('DOMContentLoaded', () => {
         aplicarColores(document.getElementById('cfgColorPrimario').value, e.target.value);
     });
 
-    // Al volver a la pestaña, asegurar que Firebase siga conectado
+    // Al volver a la pestaña, asegurar que Firebase siga activo
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden && FIREBASE_CONFIG.apiKey && !userManuallyDisconnected) {
             if (db) {
-                try {
-                    db.goOnline();
-                    logSync('Pestaña activa - conexión verificada', 'info');
-                } catch(e) {}
+                try { db.goOnline(); } catch(e) {}
             } else {
                 inicializarFirebaseRealtime();
             }
         }
     });
 
-    // Cuando vuelve internet, Firebase se reconectará solo, pero forzamos por si acaso
+    // Cuando vuelve internet, Firebase se reconectará solo
     window.addEventListener('online', () => {
         if (FIREBASE_CONFIG.apiKey && !userManuallyDisconnected) {
             logSync('🌐 Internet restaurado', 'success');
-            reconnectAttempts = 0;
             if (db) {
                 try { db.goOnline(); } catch(e) {}
             } else {
@@ -2230,11 +2229,7 @@ window.addEventListener('DOMContentLoaded', () => {
         logSync('📴 Sin internet (Firebase reintentará al volver)', 'warning');
         actualizarIndicadorConexion('syncing');
         actualizarPillsEstado();
-    });
-
-    // Antes de cerrar la página, limpiar el heartbeat
-    window.addEventListener('beforeunload', () => {
-        detenerHeartbeat();
+        actualizarEstadisticas();
     });
 });
 </script>
