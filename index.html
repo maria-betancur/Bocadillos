@@ -1,19 +1,4 @@
-
-                        <!DOCTYPE html>
-                        <html lang="en">
-                        <head>
-                            <meta charset="UTF-8">
-                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <style>
-                body {
-                  background-color: white; /* Ensure the iframe has a white background */
-                }
-
-                
-              </style>
-                        </head>
-                        <body>
-                            <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -64,12 +49,25 @@ header .brand {
     font-size: 22px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; cursor: pointer;
     background: linear-gradient(90deg, var(--primary), var(--accent));
     -webkit-background-clip: text; background-clip: text; color: transparent;
+    user-select: none; -webkit-user-select: none;
+    transition: transform 0.1s;
 }
+header .brand:active { transform: scale(0.97); }
+
+/* 🔐 Botón Admin oculto por defecto */
+.top-bar-buttons button {
+    background: white; border: 1px solid var(--gray-border); color: var(--text-dark);
+    padding: 10px 16px; border-radius: 20px; font-weight: 600; cursor: pointer;
+    transition: all 0.3s;
+}
+.top-bar-buttons.admin-hidden {
+    display: none !important;
+}
+
 header nav { display: flex; gap: 8px; background: rgba(255, 255, 255, 0.5); padding: 5px; border-radius: 30px; border: 1px solid var(--gray-border); overflow-x: auto; flex: 1; }
 header nav::-webkit-scrollbar { display: none; }
 header nav a { color: var(--text-dark); text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
 header nav a:hover, header nav a.active { background: var(--primary); color: white; }
-.top-bar-buttons button { background: white; border: 1px solid var(--gray-border); color: var(--text-dark); padding: 10px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; }
 
 .connection-indicator {
     position: fixed; top: calc(8px + var(--safe-top)); right: 8px; z-index: 200;
@@ -271,6 +269,22 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 .sync-log-entry.error { color: var(--danger); }
 .sync-log-entry.success { color: var(--success); }
 
+/* 🔐 Panel de activación del modo admin (se muestra al tocar el logo 5 veces) */
+.admin-activation-hint {
+    position: fixed; bottom: calc(90px + var(--safe-bottom)); left: 50%;
+    transform: translateX(-50%);
+    background: rgba(31, 61, 43, 0.95); color: white;
+    padding: 10px 18px; border-radius: 20px;
+    font-size: 12px; font-weight: 600;
+    z-index: 300;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+.admin-activation-hint.visible {
+    opacity: 1;
+}
+
 @media (min-width: 768px) { .container { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } }
 
 @media (max-width: 700px) {
@@ -291,10 +305,15 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
     <span id="connectionText">Sin conexión</span>
 </div>
 
+<!-- 🔐 Hint visual que aparece al tocar el logo (solo visible para el admin) -->
+<div class="admin-activation-hint" id="adminActivationHint"></div>
+
 <header>
     <div class="brand" id="storeNameView">DEGUSTASE</div>
     <nav id="navCategorias"><a href="#" class="active" onclick="filtrarCategoria('Todos', this); return false;">Todos</a></nav>
-    <div class="top-bar-buttons"><button onclick="abrirLogin()">🔐 Admin</button></div>
+    <div class="top-bar-buttons admin-hidden" id="adminButtonsContainer">
+        <button onclick="abrirLogin()">🔐 Admin</button>
+    </div>
 </header>
 
 <main>
@@ -416,6 +435,7 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                 <button class="admin-nav-item" onclick="switchTab('tab-categorias', this)">🏷️ Categorías</button>
                 <button class="admin-nav-item" onclick="switchTab('tab-personalizacion', this)">🎨 Personalización</button>
                 <button class="admin-nav-item" onclick="switchTab('tab-config', this)">⚙️ Configuración API</button>
+                <button class="admin-nav-item" onclick="switchTab('tab-seguridad', this)">🔒 Seguridad</button>
             </div>
             <button class="admin-nav-item" style="color:var(--danger);" onclick="cerrarAdmin()">✕ Salir</button>
         </div>
@@ -456,12 +476,42 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                     </div>
                 </div>
 
+                <div id="tab-seguridad" class="admin-view">
+                    <div class="dashboard-card">
+                        <h4>🔒 Visibilidad del Botón Admin</h4>
+                        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
+                            El botón <strong>🔐 Admin</strong> está visible actualmente en este dispositivo.
+                            Puedes ocultarlo para que los clientes no lo vean.
+                            <br><br>
+                            <strong>🔑 Para volver a activarlo:</strong> Toca el logo <strong>"DEGUSTASE"</strong> (arriba a la izquierda) <strong>5 veces seguidas</strong> rápidamente.
+                        </p>
+                        <div style="padding:12px; background:#fef3c7; border-left:4px solid var(--warning); border-radius:8px; font-size:12px; color:#92400e; margin-bottom:15px;">
+                            ⚠️ <strong>Importante:</strong> Al ocultar el botón, desaparecerá de la vista para todos los visitantes de <strong>este dispositivo/navegador</strong>. Los demás dispositivos nunca lo verán.
+                        </div>
+                        <button class="sync-btn warning" onclick="ocultarBotonAdmin()">🙈 Ocultar botón Admin de este dispositivo</button>
+                        <p style="font-size:11px; color:#64748b; margin-top:10px;">
+                            💡 Recuerda el gesto secreto: <strong>5 toques rápidos en el logo "DEGUSTASE"</strong>
+                        </p>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <h4>🔑 Cambiar PIN de Admin</h4>
+                        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
+                            El PIN actual es <strong>55555</strong>. Cámbialo por uno más seguro.
+                        </p>
+                        <div class="form-group">
+                            <label>Nuevo PIN (5 dígitos)</label>
+                            <input type="password" id="nuevoPinInput" maxlength="5" placeholder="•••••" style="text-align:center; letter-spacing:6px;">
+                        </div>
+                        <button class="sync-btn primary" onclick="cambiarPin()">🔐 Cambiar PIN</button>
+                    </div>
+                </div>
+
                 <div id="tab-config" class="admin-view">
                     <div class="dashboard-card">
                         <h4>🔥 Firebase (Base de Datos en Tiempo Real)</h4>
                         <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
                             La configuración de Firebase está <strong>incorporada en el código</strong> y funciona automáticamente en todos los dispositivos.
-                            Esta sección es solo para ver el estado o cambiar a otro proyecto si fuera necesario.
                         </p>
                         <div style="padding:10px; background:#ecfdf5; border-radius:8px; font-size:11px; color:#065f46; margin-bottom:10px;">
                             ✅ <strong>Estado actual:</strong> Conectado automáticamente<br>
@@ -617,27 +667,20 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 <script>
 /* ================================================================
    🔥 CONFIGURACIÓN DE FIREBASE - INCORPORADA EN EL CÓDIGO
-   
-   Estas credenciales son las oficiales del proyecto DEGUSTASE.
-   Funcionan automáticamente en TODOS los dispositivos sin configuración manual.
    ================================================================ */
 const DEFAULT_FIREBASE_CONFIG = {
     apiKey: "AIzaSyDL9SLXicxEdP-jy7eXmlscQOEjVuX9Qw8",
     databaseURL: "https://degustase-1eb19-default-rtdb.firebaseio.com"
 };
 
-/* ================================================================
-   🖼️ CONFIGURACIÓN DE IMGBB - INCORPORADA EN EL CÓDIGO
-   ================================================================ */
 const DEFAULT_IMGBB_CONFIG = {
     apiKey: "7efbf40d667b245b4f9a49934114d67d"
 };
 
 /* ================================================================
-   ⚙️ CONFIGURACIÓN FINAL (con fallback a valores por defecto)
+   ⚙️ CONFIGURACIÓN FINAL
    ================================================================ */
 let savedFirebaseConfig = JSON.parse(localStorage.getItem('degustase_firebase') || 'null');
-
 let FIREBASE_CONFIG = {
     apiKey: (savedFirebaseConfig && savedFirebaseConfig.apiKey) ? savedFirebaseConfig.apiKey : DEFAULT_FIREBASE_CONFIG.apiKey,
     databaseURL: (savedFirebaseConfig && savedFirebaseConfig.databaseURL) ? savedFirebaseConfig.databaseURL : DEFAULT_FIREBASE_CONFIG.databaseURL
@@ -647,6 +690,20 @@ let savedImgbbConfig = JSON.parse(localStorage.getItem('degustase_imgbb') || 'nu
 let IMGBB_CONFIG = {
     apiKey: (savedImgbbConfig && savedImgbbConfig.apiKey) ? savedImgbbConfig.apiKey : DEFAULT_IMGBB_CONFIG.apiKey
 };
+
+/* ================================================================
+   🔒 SEGURIDAD - CONTROL DEL BOTÓN ADMIN
+   
+   El botón Admin está OCULTO por defecto para todos los visitantes.
+   Solo se muestra en el dispositivo donde el administrador lo activó
+   mediante el gesto secreto (5 toques rápidos en el logo).
+   
+   La activación se guarda en localStorage del dispositivo.
+   ================================================================ */
+let adminModeActivo = localStorage.getItem('degustase_admin_mode') === 'true';
+
+// PIN de admin (personalizable)
+let PIN_ADMIN = localStorage.getItem('degustase_admin_pin') || '55555';
 
 /* ================================================================
    🔥 ESTADO DE FIREBASE
@@ -712,15 +769,129 @@ function guardarLocal() {
 }
 
 /* ================================================================
+   🔒 FUNCIONES DE SEGURIDAD - BOTÓN ADMIN
+   ================================================================ */
+
+/**
+ * Actualiza la visibilidad del botón Admin según el estado actual.
+ */
+function actualizarVisibilidadBotonAdmin() {
+    var container = document.getElementById('adminButtonsContainer');
+    if (!container) return;
+
+    if (adminModeActivo) {
+        container.classList.remove('admin-hidden');
+    } else {
+        container.classList.add('admin-hidden');
+    }
+}
+
+/**
+ * Oculta el botón Admin de este dispositivo.
+ * Solo se puede volver a activar con el gesto secreto (5 toques en el logo).
+ */
+function ocultarBotonAdmin() {
+    if (!confirm("¿Ocultar el botón Admin de este dispositivo?\n\nPara volver a activarlo, toca el logo \"DEGUSTASE\" 5 veces seguidas rápidamente.")) return;
+
+    adminModeActivo = false;
+    localStorage.setItem('degustase_admin_mode', 'false');
+    actualizarVisibilidadBotonAdmin();
+    showToast('🙈 Botón Admin ocultado. Usa el gesto secreto para volver a activarlo.', 'warning');
+    logSync('🙈 Botón Admin ocultado en este dispositivo', 'info');
+}
+
+/**
+ * Muestra el botón Admin en este dispositivo.
+ */
+function mostrarBotonAdmin() {
+    adminModeActivo = true;
+    localStorage.setItem('degustase_admin_mode', 'true');
+    actualizarVisibilidadBotonAdmin();
+}
+
+/**
+ * Gestor del gesto secreto: 5 toques rápidos en el logo.
+ */
+let toquesLogo = 0;
+let timerToquesLogo = null;
+const TOQUES_REQUERIDOS = 5;
+const TIEMPO_MAXIMO_TOQUES = 2000; // 2 segundos para hacer los 5 toques
+
+function registrarToqueLogo() {
+    toquesLogo++;
+
+    // Mostrar progreso visual (solo si ya está activo el modo admin o va por el toque 2+)
+    if (toquesLogo >= 2) {
+        var hint = document.getElementById('adminActivationHint');
+        if (hint) {
+            if (adminModeActivo) {
+                hint.textContent = '🔐 Toques: ' + toquesLogo + '/' + TOQUES_REQUERIDOS + ' (modo admin activo)';
+            } else {
+                hint.textContent = '🔐 Toques: ' + toquesLogo + '/' + TOQUES_REQUERIDOS;
+            }
+            hint.classList.add('visible');
+        }
+    }
+
+    // Resetear timer
+    if (timerToquesLogo) clearTimeout(timerToquesLogo);
+    timerToquesLogo = setTimeout(function() {
+        toquesLogo = 0;
+        var hint = document.getElementById('adminActivationHint');
+        if (hint) hint.classList.remove('visible');
+    }, TIEMPO_MAXIMO_TOQUES);
+
+    // Si alcanzó los toques requeridos
+    if (toquesLogo >= TOQUES_REQUERIDOS) {
+        toquesLogo = 0;
+        if (timerToquesLogo) clearTimeout(timerToquesLogo);
+
+        var hint = document.getElementById('adminActivationHint');
+        if (hint) hint.classList.remove('visible');
+
+        if (!adminModeActivo) {
+            // Activar modo admin
+            mostrarBotonAdmin();
+            showToast('🔓 ¡Modo Admin activado! El botón ya es visible en este dispositivo.', 'success');
+            logSync('🔓 Modo Admin activado por gesto secreto', 'success');
+        } else {
+            // Si ya está activo, abrir directamente el login
+            abrirLogin();
+        }
+    }
+}
+
+/**
+ * Cambiar el PIN de admin.
+ */
+function cambiarPin() {
+    var nuevoPin = document.getElementById('nuevoPinInput').value.trim();
+    if (!nuevoPin || nuevoPin.length < 4) {
+        showToast('⚠️ El PIN debe tener al menos 4 dígitos', 'warning');
+        return;
+    }
+    if (!/^\d+$/.test(nuevoPin)) {
+        showToast('⚠️ El PIN solo puede contener números', 'warning');
+        return;
+    }
+
+    PIN_ADMIN = nuevoPin;
+    localStorage.setItem('degustase_admin_pin', nuevoPin);
+    document.getElementById('nuevoPinInput').value = '';
+    showToast('✅ PIN cambiado correctamente', 'success');
+    logSync('🔑 PIN de admin cambiado', 'success');
+}
+
+/* ================================================================
    📋 REGISTRO DE SINCRONIZACIÓN
    ================================================================ */
 function logSync(message, type) {
     type = type || 'info';
-    const log = document.getElementById('syncLog');
+    var log = document.getElementById('syncLog');
     if (!log) return;
-    const now = new Date();
-    const time = now.toLocaleTimeString('es-CO');
-    const entry = document.createElement('div');
+    var now = new Date();
+    var time = now.toLocaleTimeString('es-CO');
+    var entry = document.createElement('div');
     entry.className = 'sync-log-entry ' + type;
     entry.innerHTML = '<span class="time">' + time + '</span><span>' + message + '</span>';
     log.insertBefore(entry, log.firstChild);
@@ -751,7 +922,7 @@ function inicializarAppFirebase() {
         apiKey: FIREBASE_CONFIG.apiKey,
         databaseURL: FIREBASE_CONFIG.databaseURL
     });
-    console.log('[Firebase] App inicializada con Database URL:', FIREBASE_CONFIG.databaseURL);
+    console.log('[Firebase] App inicializada');
     return firebaseApp;
 }
 
@@ -763,11 +934,9 @@ function activarPersistencia() {
         firebaseDB.setPersistenceEnabled(true);
         firebaseDB.setPersistenceCacheSizeBytes(50 * 1024 * 1024);
         persistenceEnabled = true;
-        console.log('[Firebase] Persistencia offline activada');
         logSync('💾 Persistencia offline activada', 'success');
     } catch (e) {
         persistenceEnabled = true;
-        console.warn('[Firebase] Persistencia:', e.message);
     }
 }
 
@@ -779,7 +948,6 @@ function limpiarListenersPrevios() {
 }
 
 function inicializarFirebaseRealtime() {
-    console.log('[Firebase] ========================================');
     console.log('[Firebase] Inicializando...');
 
     if (!firebaseConfigValida()) {
@@ -788,10 +956,6 @@ function inicializarFirebaseRealtime() {
         actualizarIndicadorConexion('disconnected');
         return;
     }
-
-    console.log('[Firebase] Configuración encontrada');
-    console.log('[Firebase] Database URL:', FIREBASE_CONFIG.databaseURL);
-    console.log('[Firebase] API Key:', FIREBASE_CONFIG.apiKey.substring(0, 10) + '...');
 
     try {
         limpiarListenersPrevios();
@@ -804,8 +968,6 @@ function inicializarFirebaseRealtime() {
         datosRef = firebaseDB.ref("datos");
         connectedRef = firebaseDB.ref(".info/connected");
 
-        console.log('[Firebase] Conectando...');
-        console.log('[Firebase] Leyendo /datos');
         logSync('🔄 Conectando a Firebase...', 'info');
 
         connectedRef.on('value', function(snapshot) {
@@ -819,11 +981,10 @@ function inicializarFirebaseRealtime() {
                 actualizarPillsEstado();
                 actualizarEstadisticas();
 
-                const st = document.getElementById('firebaseStatus');
-                if (st) st.innerHTML = '<span style="color:var(--success);">✅ Firebase: conectado<br>📥 Leyendo datos en tiempo real...<br>☁️ Base de datos: ' + FIREBASE_CONFIG.databaseURL + '</span>';
+                var st = document.getElementById('firebaseStatus');
+                if (st) st.innerHTML = '<span style="color:var(--success);">✅ Firebase: conectado<br>📥 Leyendo datos en tiempo real...</span>';
             } else if (!connected && firebaseConnected) {
                 firebaseConnected = false;
-                console.warn('[Firebase] ⚠️ Conexión perdida. Reconectando...');
                 logSync('⚠️ Conexión perdida. Reconectando...', 'warning');
                 actualizarIndicadorConexion('syncing');
                 actualizarPillsEstado();
@@ -849,7 +1010,6 @@ function inicializarFirebaseRealtime() {
     } catch (error) {
         console.error('[Firebase ERROR]', error);
         logSync('❌ Error: ' + error.message, 'error');
-        showToast("❌ Error Firebase: " + error.message, "danger");
         firebaseConnected = false;
         actualizarIndicadorConexion('disconnected');
         actualizarPillsEstado();
@@ -916,8 +1076,6 @@ function aplicarDatosFirebase(datos) {
         if (adminPanel && adminPanel.style.display === "flex") {
             renderCatalogo();
         }
-
-        console.log('[Firebase] Catálogo actualizado -', productos.length, 'productos');
     }
 }
 
@@ -928,17 +1086,15 @@ function manejarDatosFirebase(snapshot) {
     try {
         datos = snapshot.val();
     } catch(e) {
-        console.error('[Firebase ERROR] Leyendo snapshot:', e);
-        logSync('❌ Error al leer snapshot: ' + e.message, 'error');
+        logSync('❌ Error al leer snapshot', 'error');
         return;
     }
 
     if (!datos) {
         if (primeraCargaFirebase) {
-            console.log('[Firebase] Base de datos vacía. Se conservan datos locales.');
             logSync('ℹ️ Firebase vacío. Datos locales conservados.', 'info');
             const st = document.getElementById('firebaseStatus');
-            if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado. Base vacía. Pulsa "⬆️ Subir catálogo" para enviar datos locales a todos los dispositivos.</span>';
+            if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado. Base vacía. Pulsa "⬆️ Subir catálogo" para enviar datos.</span>';
             primeraCargaFirebase = false;
         }
         return;
@@ -952,7 +1108,6 @@ function manejarDatosFirebase(snapshot) {
     primeraCargaFirebase = false;
 
     var numProd = datos.productos ? normalizarArray(datos.productos).length : 0;
-    console.log('[Firebase] Productos recibidos:', numProd);
     logSync('📥 Productos descargados: ' + numProd, 'success');
 
     ultimaSyncVisual = new Date();
@@ -962,22 +1117,13 @@ function manejarDatosFirebase(snapshot) {
 }
 
 function manejarErrorFirebase(error) {
-    console.error('[Firebase ERROR]', error);
-
     var mensaje = "Error de conexión";
     if (error && error.code) {
         switch(error.code) {
-            case 'PERMISSION_DENIED':
-                mensaje = 'Permiso denegado. Verifica las reglas de Firebase';
-                break;
-            case 'NETWORK_ERROR':
-                mensaje = 'Error de red. Reintentando...';
-                break;
-            case 'INVALID_TOKEN':
-                mensaje = 'Token inválido. Revisa tu API Key';
-                break;
-            default:
-                mensaje = error.message || error.code;
+            case 'PERMISSION_DENIED': mensaje = 'Permiso denegado'; break;
+            case 'NETWORK_ERROR': mensaje = 'Error de red. Reintentando...'; break;
+            case 'INVALID_TOKEN': mensaje = 'Token inválido'; break;
+            default: mensaje = error.message || error.code;
         }
     } else if (error && error.message) {
         mensaje = error.message;
@@ -1034,7 +1180,6 @@ function subirDatosANube() {
         ultimaSyncVisual = new Date();
         actualizarEstadisticas();
     }).catch(function(error) {
-        console.error('[Firebase ERROR] Subiendo:', error);
         logSync('❌ Error al subir: ' + (error.message || error), 'error');
         showToast("❌ Error: " + (error.message || 'Desconocido'), "danger");
     });
@@ -1065,7 +1210,6 @@ function descargarDatosDeNube() {
             showToast("ℹ️ No hay datos en Firebase aún", "warning");
         }
     }).catch(function(error) {
-        console.error('[Firebase ERROR] Descargando:', error);
         logSync('❌ Error al descargar: ' + (error.message || error), 'error');
         showToast("❌ Error: " + (error.message || 'Desconocido'), "danger");
     });
@@ -1080,7 +1224,6 @@ function forzarDescarga() {
 
     actualizarIndicadorConexion('syncing');
     logSync('⚡ Forzando descarga...', 'info');
-    showToast("⚡ Forzando descarga...", "success");
 
     datosRef.once("value").then(function(snapshot) {
         var datos = snapshot.val();
@@ -1090,9 +1233,7 @@ function forzarDescarga() {
                 var nuevosProductos = normalizarArray(datos.productos);
                 nuevosProductos.forEach(function(p) {
                     if (!p.id) p.id = genId();
-                    if (!Array.isArray(p.imagenes)) {
-                        p.imagenes = p.imagenes ? [p.imagenes] : [];
-                    }
+                    if (!Array.isArray(p.imagenes)) p.imagenes = p.imagenes ? [p.imagenes] : [];
                 });
                 productos = nuevosProductos;
             }
@@ -1100,12 +1241,8 @@ function forzarDescarga() {
                 categorias = normalizarArray(datos.categorias);
                 if (categorias.length === 0) categorias = ['General'];
             }
-            if (datos.tiendaConfig) {
-                tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
-            }
-            if (datos.ultimaActualizacion) {
-                ultimaActualizacionLocal = datos.ultimaActualizacion;
-            }
+            if (datos.tiendaConfig) tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
+            if (datos.ultimaActualizacion) ultimaActualizacionLocal = datos.ultimaActualizacion;
 
             guardarLocal();
             prepararCacheBusqueda();
@@ -1126,7 +1263,6 @@ function forzarDescarga() {
             showToast("ℹ️ No hay datos en Firebase", "warning");
         }
     }).catch(function(error) {
-        console.error('[Firebase ERROR] Forzando descarga:', error);
         logSync('❌ Error: ' + (error.message || error), 'error');
         showToast("❌ Error: " + (error.message || 'Desconocido'), "danger");
     });
@@ -1142,13 +1278,9 @@ function actualizarIndicadorConexion(estado) {
 
     var estadoReal = estado;
     if (!estadoReal) {
-        if (!firebaseConfigValida()) {
-            estadoReal = 'disconnected';
-        } else if (firebaseConnected) {
-            estadoReal = 'connected';
-        } else {
-            estadoReal = 'syncing';
-        }
+        if (!firebaseConfigValida()) estadoReal = 'disconnected';
+        else if (firebaseConnected) estadoReal = 'connected';
+        else estadoReal = 'syncing';
     }
 
     indicator.className = 'connection-indicator ' + estadoReal;
@@ -1216,7 +1348,7 @@ function subirUnaImagenImgBB(file, progressId, fillId, statusId, current, total)
 
     if (progressDiv) progressDiv.classList.add('active');
     if (progressFill) progressFill.style.width = Math.round((current / total) * 100) + '%';
-    if (uploadStatus) uploadStatus.textContent = 'Subiendo imagen ' + current + ' de ' + total + ': ' + file.name;
+    if (uploadStatus) uploadStatus.textContent = 'Subiendo imagen ' + current + ' de ' + total;
 
     return new Promise(function(resolve, reject) {
         var reader = new FileReader();
@@ -1294,7 +1426,7 @@ function procesarArchivosImagen(input, contexto) {
             if (agregadas > 0) showToast('✅ ' + agregadas + ' imagen(es) lista(s)', "success");
         });
     } else {
-        showToast("ℹ️ Sin ImgBB: las fotos se guardan comprimidas en este dispositivo", "warning");
+        showToast("ℹ️ Sin ImgBB: las fotos se guardan comprimidas", "warning");
         Promise.all(files.map(function(f) {
             return comprimirImagenLocal(f).then(function(dataUrl) {
                 lista.push(dataUrl);
@@ -1415,7 +1547,7 @@ function renderPresetsColores() {
             document.getElementById('cfgColorPrimario').value = p.primario;
             document.getElementById('cfgColorAcento').value = p.acento;
             aplicarColores(p.primario, p.acento);
-            showToast('🎨 Paleta "' + p.nombre + '" aplicada (recuerda guardar)', "success");
+            showToast('🎨 Paleta "' + p.nombre + '" aplicada', "success");
         };
         cont.appendChild(chip);
     });
@@ -2076,17 +2208,19 @@ function seleccionarBusqueda(id) {
 /* ================================================================
    🔐 ADMIN
    ================================================================ */
-var PIN = "55555";
 function abrirLogin() {
     document.getElementById('loginModal').style.display = 'flex';
-    document.getElementById('adminPassInput').focus();
+    document.getElementById('adminPassInput').value = '';
+    setTimeout(function() {
+        document.getElementById('adminPassInput').focus();
+    }, 100);
 }
 function cerrarLogin() {
     document.getElementById('loginModal').style.display = 'none';
     document.getElementById('adminPassInput').value = '';
 }
 function verificarPassword() {
-    if (document.getElementById('adminPassInput').value === PIN) {
+    if (document.getElementById('adminPassInput').value === PIN_ADMIN) {
         cerrarLogin();
         document.getElementById('adminPanel').style.display = 'flex';
         actualizarEstadisticas();
@@ -2109,7 +2243,8 @@ var TAB_TITULOS = {
     'tab-personalizacion': 'Personalización',
     'tab-nuevo': 'Nuevo Producto',
     'tab-catalogo': 'Catálogo de Productos',
-    'tab-categorias': 'Categorías'
+    'tab-categorias': 'Categorías',
+    'tab-seguridad': 'Seguridad'
 };
 
 function switchTab(id, btn) {
@@ -2135,16 +2270,30 @@ function syncTiendaUI() {
 }
 
 /* ================================================================
-   🚀 INICIO - CONEXIÓN AUTOMÁTICA
+   🚀 INICIO
    ================================================================ */
 window.addEventListener('DOMContentLoaded', function() {
-    console.log('[App] ========================================');
     console.log('[App] DEGUSTASE iniciando...');
-    console.log('[App] Firebase API Key: ✅ configurada');
-    console.log('[App] Firebase Database URL:', FIREBASE_CONFIG.databaseURL);
-    console.log('[App] ImgBB API Key: ✅ configurada');
+    console.log('[App] Modo Admin activo:', adminModeActivo);
 
-    // Mostrar valores en inputs (solo lectura)
+    // 🔒 Aplicar visibilidad del botón Admin según localStorage
+    actualizarVisibilidadBotonAdmin();
+
+    // 🔐 Configurar el gesto secreto en el logo
+    var brand = document.getElementById('storeNameView');
+    if (brand) {
+        brand.addEventListener('click', function(e) {
+            e.preventDefault();
+            registrarToqueLogo();
+        });
+        // También soporte para touch (móviles)
+        brand.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            registrarToqueLogo();
+        });
+    }
+
+    // Mostrar valores en inputs
     document.getElementById('cfgFirebaseApiKey').value = FIREBASE_CONFIG.apiKey;
     document.getElementById('cfgFirebaseUrl').value = FIREBASE_CONFIG.databaseURL;
 
@@ -2152,7 +2301,7 @@ window.addEventListener('DOMContentLoaded', function() {
         document.getElementById('imgbbStatus').innerHTML = '<span style="color:var(--success);">✅ Configurado automáticamente</span>';
     }
 
-    // Renderizar UI local primero
+    // Renderizar UI
     prepararCacheBusqueda();
     aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
     poblarInputsPersonalizacion();
@@ -2167,9 +2316,7 @@ window.addEventListener('DOMContentLoaded', function() {
     actualizarPillsEstado();
     actualizarIndicadorConexion();
 
-    console.log('[App] UI local renderizada con', productos.length, 'productos');
-
-    // 🔥 INICIALIZAR FIREBASE AUTOMÁTICAMENTE
+    // 🔥 Inicializar Firebase automáticamente
     inicializarFirebaseRealtime();
 
     // Listeners de colores
@@ -2193,7 +2340,6 @@ window.addEventListener('DOMContentLoaded', function() {
 
     window.addEventListener('online', function() {
         if (firebaseConfigValida()) {
-            console.log('[Firebase] 🌐 Internet restaurado');
             logSync('🌐 Internet restaurado', 'success');
             if (firebaseDB) {
                 try { firebaseDB.goOnline(); } catch(e) {}
@@ -2205,8 +2351,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
     window.addEventListener('offline', function() {
         firebaseConnected = false;
-        console.warn('[Firebase] 📴 Sin internet');
-        logSync('📴 Sin internet (reconectará automáticamente)', 'warning');
+        logSync('📴 Sin internet', 'warning');
         actualizarIndicadorConexion('syncing');
         actualizarPillsEstado();
         actualizarEstadisticas();
@@ -2215,20 +2360,3 @@ window.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
-
-
-              <script>
-                              const DEFAULT_FIREBASE_CONFIG = {
-    apiKey: "AIzaSyDL9SLXicxEdP-jy7eXmlscQOEjVuX9Qw8",
-    databaseURL: "https://degustase-1eb19-default-rtdb.firebaseio.com"
-};
-
-const DEFAULT_IMGBB_CONFIG = {
-    apiKey: "7efbf40d667b245b4f9a49934114d67d"
-};
-
-
-              </script>
-                        </body>
-                        </html>
-                    
