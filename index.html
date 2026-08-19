@@ -271,12 +271,6 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 .sync-log-entry.error { color: var(--danger); }
 .sync-log-entry.success { color: var(--success); }
 
-.api-key-warning {
-    background: #fef3c7; border: 2px solid #f59e0b; color: #92400e;
-    padding: 12px; border-radius: 10px; margin: 10px 0;
-    font-size: 12px; font-weight: 600;
-}
-
 @media (min-width: 768px) { .container { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } }
 
 @media (max-width: 700px) {
@@ -387,7 +381,7 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
         <div class="form-group">
             <label>🖼️ Imágenes del Producto</label>
             <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:10px; margin-bottom:10px; font-size:12px; color:#166534;">
-                💡 Sube varias fotos del producto o pega URLs. La primera imagen será la principal. Si ImgBB está configurado, las fotos se suben allí automáticamente.
+                💡 Sube varias fotos del producto o pega URLs. La primera imagen será la principal. Las fotos se suben automáticamente a ImgBB.
             </div>
             <input type="file" id="editFileImg" accept="image/*" multiple onchange="procesarArchivosImagen(this, 'edit')" style="padding:8px; border:1px solid var(--gray-border); border-radius:8px; width:100%; margin-bottom:8px;">
 
@@ -416,57 +410,23 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
         <div class="admin-sidebar">
             <h3 style="color:var(--primary); margin:0 0 20px 0;">🥨 DEGUSTASE ADMIN</h3>
             <div class="admin-nav-menu">
-                <button class="admin-nav-item active" onclick="switchTab('tab-config', this)">⚙️ Configuración API</button>
-                <button class="admin-nav-item" onclick="switchTab('tab-sincronizacion', this)">☁️ Sincronización</button>
-                <button class="admin-nav-item" onclick="switchTab('tab-personalizacion', this)">🎨 Personalización</button>
+                <button class="admin-nav-item active" onclick="switchTab('tab-sincronizacion', this)">☁️ Sincronización</button>
                 <button class="admin-nav-item" onclick="switchTab('tab-nuevo', this)">➕ Nuevo Producto</button>
                 <button class="admin-nav-item" onclick="switchTab('tab-catalogo', this)">📊 Catálogo</button>
                 <button class="admin-nav-item" onclick="switchTab('tab-categorias', this)">🏷️ Categorías</button>
+                <button class="admin-nav-item" onclick="switchTab('tab-personalizacion', this)">🎨 Personalización</button>
+                <button class="admin-nav-item" onclick="switchTab('tab-config', this)">⚙️ Configuración API</button>
             </div>
             <button class="admin-nav-item" style="color:var(--danger);" onclick="cerrarAdmin()">✕ Salir</button>
         </div>
 
         <div style="display:flex; flex-direction:column; overflow:hidden;">
             <div style="background:white; padding:15px 20px; border-bottom:1px solid var(--gray-border);">
-                <h2 style="margin:0; font-size:18px;" id="adminSectionTitle">Configuración API</h2>
+                <h2 style="margin:0; font-size:18px;" id="adminSectionTitle">Sincronización</h2>
             </div>
             <div class="admin-body">
 
-                <div id="tab-config" class="admin-view active">
-                    <div class="dashboard-card">
-                        <h4>🔥 Firebase (Base de Datos en Tiempo Real)</h4>
-                        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
-                            La configuración principal está <strong>incorporada en el código</strong> y funciona automáticamente en todos los dispositivos.
-                            Esta sección es opcional: solo úsala si necesitas cambiar a otro proyecto de Firebase.
-                        </p>
-                        <div class="form-group">
-                            <label>API Key (opcional - sobrescribe la predeterminada)</label>
-                            <input type="text" id="cfgFirebaseApiKey" placeholder="Dejar vacío para usar la predeterminada">
-                        </div>
-                        <div class="form-group">
-                            <label>Database URL (opcional - sobrescribe la predeterminada)</label>
-                            <input type="text" id="cfgFirebaseUrl" placeholder="Dejar vacío para usar la predeterminada">
-                        </div>
-                        <button class="sync-btn primary" onclick="guardarConfigFirebase()">💾 Guardar y Reconectar</button>
-                        <button class="sync-btn ghost" onclick="restaurarConfigFirebase()" style="margin-top:5px;">↩️ Restaurar configuración predeterminada</button>
-                        <div id="firebaseStatus" style="margin-top:10px; font-size:12px;"></div>
-                    </div>
-
-                    <div class="dashboard-card">
-                        <h4>🖼️ ImgBB (Subida de Imágenes)</h4>
-                        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
-                            Obtén tu API Key gratis en <a href="https://api.imgbb.com" target="_blank" style="color:var(--primary);">api.imgbb.com</a>. Si no la configuras, las fotos se guardan comprimidas en este dispositivo.
-                        </p>
-                        <div class="form-group">
-                            <label>API Key de ImgBB</label>
-                            <input type="text" id="cfgImgbbKey" placeholder="6d207e02198a847aa98d0a2a901485a5">
-                        </div>
-                        <button class="sync-btn primary" onclick="guardarConfigImgBB()">💾 Guardar ImgBB</button>
-                        <div id="imgbbStatus" style="margin-top:10px; font-size:12px;"></div>
-                    </div>
-                </div>
-
-                <div id="tab-sincronizacion" class="admin-view">
+                <div id="tab-sincronizacion" class="admin-view active">
                     <div class="dashboard-card">
                         <h4>☁️ Estado de Conexión</h4>
                         <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
@@ -493,6 +453,40 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                         <div class="sync-log" id="syncLog">
                             <div class="sync-log-entry"><span class="time">--:--:--</span><span>Sin eventos aún</span></div>
                         </div>
+                    </div>
+                </div>
+
+                <div id="tab-config" class="admin-view">
+                    <div class="dashboard-card">
+                        <h4>🔥 Firebase (Base de Datos en Tiempo Real)</h4>
+                        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
+                            La configuración de Firebase está <strong>incorporada en el código</strong> y funciona automáticamente en todos los dispositivos.
+                            Esta sección es solo para ver el estado o cambiar a otro proyecto si fuera necesario.
+                        </p>
+                        <div style="padding:10px; background:#ecfdf5; border-radius:8px; font-size:11px; color:#065f46; margin-bottom:10px;">
+                            ✅ <strong>Estado actual:</strong> Conectado automáticamente<br>
+                            🌐 <strong>Database URL:</strong> degustase-1eb19-default-rtdb.firebaseio.com
+                        </div>
+                        <div class="form-group">
+                            <label>API Key (solo lectura)</label>
+                            <input type="text" id="cfgFirebaseApiKey" readonly style="background:#f1f5f9; color:#64748b;">
+                        </div>
+                        <div class="form-group">
+                            <label>Database URL (solo lectura)</label>
+                            <input type="text" id="cfgFirebaseUrl" readonly style="background:#f1f5f9; color:#64748b;">
+                        </div>
+                        <div id="firebaseStatus" style="margin-top:10px; font-size:12px;"></div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <h4>🖼️ ImgBB (Subida de Imágenes)</h4>
+                        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">
+                            La API Key de ImgBB está incorporada en el código. Las imágenes se suben automáticamente.
+                        </p>
+                        <div style="padding:10px; background:#ecfdf5; border-radius:8px; font-size:11px; color:#065f46;">
+                            ✅ <strong>Estado:</strong> ImgBB configurado automáticamente
+                        </div>
+                        <div id="imgbbStatus" style="margin-top:10px; font-size:12px;"></div>
                     </div>
                 </div>
 
@@ -557,7 +551,7 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                         <div class="form-group">
                             <label>🖼️ Imágenes del Producto</label>
                             <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:12px; margin-bottom:10px; font-size:12px; color:#166534;">
-                                💡 <strong>Sube varias fotos</strong> del producto desde tu celular o pega URLs. Con ImgBB configurado se suben automáticamente.
+                                💡 <strong>Sube varias fotos</strong> del producto desde tu celular. Se suben automáticamente a ImgBB.
                             </div>
                             <input type="file" id="prodFileImg" accept="image/*" multiple onchange="procesarArchivosImagen(this, 'prod')" style="padding:10px; border:1px solid var(--gray-border); border-radius:8px; width:100%;">
 
@@ -624,29 +618,35 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 /* ================================================================
    🔥 CONFIGURACIÓN DE FIREBASE - INCORPORADA EN EL CÓDIGO
    
-   ⚠️ IMPORTANTE:
-   - Reemplaza "TU_API_KEY_AQUI" con tu API Key real de Firebase
-   - La API Key se obtiene en: Firebase Console → Configuración del proyecto → General → Tus apps → SDK setup
-   - La Database URL ya está configurada con la de tu proyecto
-   - Esta configuración es PÚBLICA (la API Key de Firebase es segura para exponer)
+   Estas credenciales son las oficiales del proyecto DEGUSTASE.
+   Funcionan automáticamente en TODOS los dispositivos sin configuración manual.
    ================================================================ */
 const DEFAULT_FIREBASE_CONFIG = {
-    apiKey: "TU_API_KEY_AQUI",
+    apiKey: "AIzaSyDL9SLXicxEdP-jy7eXmlscQOEjVuX9Qw8",
     databaseURL: "https://degustase-1eb19-default-rtdb.firebaseio.com"
 };
 
 /* ================================================================
-   ⚙️ CONFIGURACIÓN DE APIS (con fallback a valores por defecto)
+   🖼️ CONFIGURACIÓN DE IMGBB - INCORPORADA EN EL CÓDIGO
+   ================================================================ */
+const DEFAULT_IMGBB_CONFIG = {
+    apiKey: "7efbf40d667b245b4f9a49934114d67d"
+};
+
+/* ================================================================
+   ⚙️ CONFIGURACIÓN FINAL (con fallback a valores por defecto)
    ================================================================ */
 let savedFirebaseConfig = JSON.parse(localStorage.getItem('degustase_firebase') || 'null');
 
-// Si hay config personalizada en localStorage, úsala. Si no, usa la predeterminada del código.
 let FIREBASE_CONFIG = {
     apiKey: (savedFirebaseConfig && savedFirebaseConfig.apiKey) ? savedFirebaseConfig.apiKey : DEFAULT_FIREBASE_CONFIG.apiKey,
     databaseURL: (savedFirebaseConfig && savedFirebaseConfig.databaseURL) ? savedFirebaseConfig.databaseURL : DEFAULT_FIREBASE_CONFIG.databaseURL
 };
 
-let IMGBB_CONFIG = JSON.parse(localStorage.getItem('degustase_imgbb') || 'null') || { apiKey: '' };
+let savedImgbbConfig = JSON.parse(localStorage.getItem('degustase_imgbb') || 'null');
+let IMGBB_CONFIG = {
+    apiKey: (savedImgbbConfig && savedImgbbConfig.apiKey) ? savedImgbbConfig.apiKey : DEFAULT_IMGBB_CONFIG.apiKey
+};
 
 /* ================================================================
    🔥 ESTADO DE FIREBASE
@@ -729,34 +729,15 @@ function logSync(message, type) {
 
 /* ================================================================
    🔥 FIREBASE - INICIALIZACIÓN AUTOMÁTICA (API COMPAT)
-   
-   Usa ÚNICAMENTE métodos de la API compat:
-   - firebase.initializeApp()
-   - firebase.database()
-   - database.setPersistenceEnabled()
-   - database.ref()
-   - ref.on() / ref.off()
-   - ref.set() / ref.once()
-   - snapshot.val()
-   - database.goOnline() / goOffline()
-   
-   NO usa: keepSynced() (no existe en compat)
    ================================================================ */
 
-/**
- * Verifica si la configuración de Firebase es válida.
- */
 function firebaseConfigValida() {
     return FIREBASE_CONFIG.apiKey &&
            FIREBASE_CONFIG.apiKey !== '' &&
-           FIREBASE_CONFIG.apiKey !== 'TU_API_KEY_AQUI' &&
            FIREBASE_CONFIG.databaseURL &&
            FIREBASE_CONFIG.databaseURL !== '';
 }
 
-/**
- * Inicializa Firebase App UNA SOLA VEZ.
- */
 function inicializarAppFirebase() {
     if (firebaseApp) return firebaseApp;
 
@@ -774,9 +755,6 @@ function inicializarAppFirebase() {
     return firebaseApp;
 }
 
-/**
- * Activa persistencia offline UNA SOLA VEZ.
- */
 function activarPersistencia() {
     if (persistenceEnabled) return;
     if (!firebaseDB) return;
@@ -793,9 +771,6 @@ function activarPersistencia() {
     }
 }
 
-/**
- * Limpia listeners previos.
- */
 function limpiarListenersPrevios() {
     try { if (datosRef) datosRef.off(); } catch (e) {}
     try { if (connectedRef) connectedRef.off(); } catch (e) {}
@@ -803,30 +778,14 @@ function limpiarListenersPrevios() {
     connectedRef = null;
 }
 
-/**
- * Función principal: inicializa Firebase y conecta listeners.
- * Se llama automáticamente al cargar la página.
- */
 function inicializarFirebaseRealtime() {
     console.log('[Firebase] ========================================');
     console.log('[Firebase] Inicializando...');
 
-    // 1. Validar configuración
     if (!firebaseConfigValida()) {
-        console.warn('[Firebase ERROR] Configuración inválida o faltante.');
-        console.warn('[Firebase ERROR] API Key actual:', FIREBASE_CONFIG.apiKey);
-        console.warn('[Firebase ERROR] Database URL actual:', FIREBASE_CONFIG.databaseURL);
-        logSync('❌ Firebase: API Key no configurada. Edita el código y reemplaza "TU_API_KEY_AQUI".', 'error');
+        console.warn('[Firebase ERROR] Configuración inválida');
+        logSync('❌ Firebase: configuración inválida', 'error');
         actualizarIndicadorConexion('disconnected');
-
-        const st = document.getElementById('firebaseStatus');
-        if (st) {
-            st.innerHTML = '<div class="api-key-warning">' +
-                '⚠️ <strong>Firebase no puede conectarse</strong><br>' +
-                'La API Key predeterminada no está configurada.<br>' +
-                'Abre el archivo HTML y busca <code>DEFAULT_FIREBASE_CONFIG</code> para reemplazar <code>TU_API_KEY_AQUI</code> con tu API Key real de Firebase.' +
-                '</div>';
-        }
         return;
     }
 
@@ -835,22 +794,13 @@ function inicializarFirebaseRealtime() {
     console.log('[Firebase] API Key:', FIREBASE_CONFIG.apiKey.substring(0, 10) + '...');
 
     try {
-        // 2. Limpiar listeners previos
         limpiarListenersPrevios();
-
-        // 3. Inicializar App Firebase
         inicializarAppFirebase();
-
-        // 4. Obtener base de datos
         firebaseDB = firebase.database();
-
-        // 5. Activar persistencia
         activarPersistencia();
 
-        // 6. Asegurar online
         try { firebaseDB.goOnline(); } catch(e) {}
 
-        // 7. Crear referencias
         datosRef = firebaseDB.ref("datos");
         connectedRef = firebaseDB.ref(".info/connected");
 
@@ -858,7 +808,6 @@ function inicializarFirebaseRealtime() {
         console.log('[Firebase] Leyendo /datos');
         logSync('🔄 Conectando a Firebase...', 'info');
 
-        // 8. Listener de estado de conexión
         connectedRef.on('value', function(snapshot) {
             var connected = snapshot.val() === true;
 
@@ -874,7 +823,7 @@ function inicializarFirebaseRealtime() {
                 if (st) st.innerHTML = '<span style="color:var(--success);">✅ Firebase: conectado<br>📥 Leyendo datos en tiempo real...<br>☁️ Base de datos: ' + FIREBASE_CONFIG.databaseURL + '</span>';
             } else if (!connected && firebaseConnected) {
                 firebaseConnected = false;
-                console.warn('[Firebase] ⚠️ Conexión perdida. Reconectando automáticamente...');
+                console.warn('[Firebase] ⚠️ Conexión perdida. Reconectando...');
                 logSync('⚠️ Conexión perdida. Reconectando...', 'warning');
                 actualizarIndicadorConexion('syncing');
                 actualizarPillsEstado();
@@ -886,7 +835,6 @@ function inicializarFirebaseRealtime() {
             console.warn('[Firebase ERROR] Listener connected:', error);
         });
 
-        // 9. Listener principal de datos
         primeraCargaFirebase = true;
         datosRef.on('value', function(snapshot) {
             manejarDatosFirebase(snapshot);
@@ -985,7 +933,6 @@ function manejarDatosFirebase(snapshot) {
         return;
     }
 
-    // Caso 1: Firebase vacío
     if (!datos) {
         if (primeraCargaFirebase) {
             console.log('[Firebase] Base de datos vacía. Se conservan datos locales.');
@@ -997,13 +944,11 @@ function manejarDatosFirebase(snapshot) {
         return;
     }
 
-    // Caso 2: Evitar sobrescribir cambios locales más recientes
     var tsRemoto = datos.ultimaActualizacion || 0;
     if (!primeraCargaFirebase && tsRemoto > 0 && tsRemoto < ultimaActualizacionLocal) {
         return;
     }
 
-    // Caso 3: Aplicar datos remotos
     primeraCargaFirebase = false;
 
     var numProd = datos.productos ? normalizarArray(datos.productos).length : 0;
@@ -1045,48 +990,9 @@ function manejarErrorFirebase(error) {
     actualizarEstadisticas();
 }
 
-/**
- * Restaurar configuración predeterminada (borra la personalizada de localStorage).
- */
-function restaurarConfigFirebase() {
-    localStorage.removeItem('degustase_firebase');
-    FIREBASE_CONFIG.apiKey = DEFAULT_FIREBASE_CONFIG.apiKey;
-    FIREBASE_CONFIG.databaseURL = DEFAULT_FIREBASE_CONFIG.databaseURL;
-
-    document.getElementById('cfgFirebaseApiKey').value = '';
-    document.getElementById('cfgFirebaseUrl').value = '';
-
-    showToast('↩️ Configuración predeterminada restaurada', 'success');
-    logSync('↩️ Configuración predeterminada restaurada', 'info');
-
-    // Reinicializar
-    firebaseInitialized = false;
-    firebaseConnected = false;
-    if (firebaseDB) {
-        try { limpiarListenersPrevios(); } catch(e) {}
-        firebaseDB = null;
-    }
-    inicializarFirebaseRealtime();
-}
-
-/**
- * Desconectar Firebase manualmente (ya no se usa como botón principal).
- */
-function desconectarFirebase() {
-    limpiarListenersPrevios();
-    try { if (firebaseDB) firebaseDB.goOffline(); } catch(e) {}
-    firebaseDB = null;
-    firebaseConnected = false;
-    firebaseInitialized = false;
-    actualizarPillsEstado();
-    actualizarIndicadorConexion('disconnected');
-    actualizarEstadisticas();
-    logSync('🔌 Firebase desconectado', 'info');
-}
-
 function reconectarManual() {
     if (!firebaseConfigValida()) {
-        showToast("⚠️ Configura la API Key primero", "warning");
+        showToast("⚠️ Configuración inválida", "warning");
         return;
     }
 
@@ -1226,50 +1132,6 @@ function forzarDescarga() {
     });
 }
 
-function guardarConfigFirebase() {
-    var apiKey = document.getElementById('cfgFirebaseApiKey').value.trim();
-    var url = document.getElementById('cfgFirebaseUrl').value.trim();
-
-    // Si están vacíos, usar los predeterminados
-    var finalApiKey = apiKey || DEFAULT_FIREBASE_CONFIG.apiKey;
-    var finalUrl = url || DEFAULT_FIREBASE_CONFIG.databaseURL;
-
-    if (!finalApiKey || finalApiKey === 'TU_API_KEY_AQUI' || !finalUrl) {
-        showToast("⚠️ Ingresa la API Key y Database URL válidas", "warning");
-        return;
-    }
-
-    FIREBASE_CONFIG.apiKey = finalApiKey;
-    FIREBASE_CONFIG.databaseURL = finalUrl.replace(/\/$/, '');
-    localStorage.setItem('degustase_firebase', JSON.stringify(FIREBASE_CONFIG));
-
-    document.getElementById('firebaseStatus').innerHTML = '<span style="color:var(--success);">✅ Reconectando...</span>';
-    showToast("✅ Configuración guardada", "success");
-    logSync('💾 Configuración Firebase guardada', 'success');
-
-    // Reinicializar
-    firebaseInitialized = false;
-    firebaseConnected = false;
-    if (firebaseDB) {
-        try { limpiarListenersPrevios(); } catch(e) {}
-        firebaseDB = null;
-    }
-    inicializarFirebaseRealtime();
-}
-
-function guardarConfigImgBB() {
-    var key = document.getElementById('cfgImgbbKey').value.trim();
-    if (!key) {
-        showToast("⚠️ Ingresa tu API Key de ImgBB", "warning");
-        return;
-    }
-    IMGBB_CONFIG.apiKey = key;
-    localStorage.setItem('degustase_imgbb', JSON.stringify(IMGBB_CONFIG));
-    document.getElementById('imgbbStatus').innerHTML = '<span style="color:var(--success);">✅ ImgBB configurado</span>';
-    actualizarPillsEstado();
-    showToast("✅ ImgBB guardado", "success");
-}
-
 /* ================================================================
    🎛️ INDICADORES DE ESTADO
    ================================================================ */
@@ -1303,7 +1165,7 @@ function mostrarEstadoConexion() {
     } else if (firebaseConfigValida()) {
         showToast('🔄 Firebase está intentando conectarse...', 'warning');
     } else {
-        showToast('⚠️ Configura la API Key en el código HTML', 'warning');
+        showToast('⚠️ Error de configuración', 'warning');
     }
 }
 
@@ -1319,7 +1181,7 @@ function actualizarPillsEstado() {
             pf.textContent = '🔥 Firebase: conectando...';
         } else {
             pf.className = 'status-pill off';
-            pf.textContent = '🔥 Firebase: sin API Key';
+            pf.textContent = '🔥 Firebase: sin configurar';
         }
     }
     if (pi) {
@@ -1336,7 +1198,7 @@ function actualizarEstadisticas() {
         var estado;
         if (firebaseConnected) estado = '☁️ Conectado - sincronizado en tiempo real';
         else if (firebaseConfigValida()) estado = '🔄 Conectando automáticamente...';
-        else estado = '⚠️ API Key no configurada';
+        else estado = '⚠️ Sin configurar';
 
         var syncInfo = ultimaSyncVisual ? '<br>☁️ Última sincronización: ' + ultimaSyncVisual.toLocaleTimeString('es-CO') : '';
 
@@ -2259,6 +2121,10 @@ function switchTab(id, btn) {
     if (id === 'tab-catalogo') renderCatalogo();
     if (id === 'tab-categorias') renderCategoriasAdmin();
     if (id === 'tab-sincronizacion') { actualizarEstadisticas(); actualizarPillsEstado(); }
+    if (id === 'tab-config') {
+        document.getElementById('cfgFirebaseApiKey').value = FIREBASE_CONFIG.apiKey;
+        document.getElementById('cfgFirebaseUrl').value = FIREBASE_CONFIG.databaseURL;
+    }
 }
 
 function syncTiendaUI() {
@@ -2269,29 +2135,24 @@ function syncTiendaUI() {
 }
 
 /* ================================================================
-   🚀 INICIO - CONEXIÓN AUTOMÁTICA DE FIREBASE
+   🚀 INICIO - CONEXIÓN AUTOMÁTICA
    ================================================================ */
 window.addEventListener('DOMContentLoaded', function() {
     console.log('[App] ========================================');
     console.log('[App] DEGUSTASE iniciando...');
-    console.log('[App] Configuración Firebase:');
-    console.log('[App]   - apiKey:', FIREBASE_CONFIG.apiKey === 'TU_API_KEY_AQUI' ? '⚠️ NO CONFIGURADA' : '✅ configurada');
-    console.log('[App]   - databaseURL:', FIREBASE_CONFIG.databaseURL);
+    console.log('[App] Firebase API Key: ✅ configurada');
+    console.log('[App] Firebase Database URL:', FIREBASE_CONFIG.databaseURL);
+    console.log('[App] ImgBB API Key: ✅ configurada');
 
-    // Mostrar valores actuales en los inputs (si hay config personalizada)
-    if (savedFirebaseConfig && savedFirebaseConfig.apiKey && savedFirebaseConfig.apiKey !== 'TU_API_KEY_AQUI') {
-        document.getElementById('cfgFirebaseApiKey').value = savedFirebaseConfig.apiKey;
-    }
-    if (savedFirebaseConfig && savedFirebaseConfig.databaseURL) {
-        document.getElementById('cfgFirebaseUrl').value = savedFirebaseConfig.databaseURL;
-    }
+    // Mostrar valores en inputs (solo lectura)
+    document.getElementById('cfgFirebaseApiKey').value = FIREBASE_CONFIG.apiKey;
+    document.getElementById('cfgFirebaseUrl').value = FIREBASE_CONFIG.databaseURL;
 
     if (IMGBB_CONFIG.apiKey) {
-        document.getElementById('cfgImgbbKey').value = IMGBB_CONFIG.apiKey;
-        document.getElementById('imgbbStatus').innerHTML = '<span style="color:var(--success);">✅ Configurado</span>';
+        document.getElementById('imgbbStatus').innerHTML = '<span style="color:var(--success);">✅ Configurado automáticamente</span>';
     }
 
-    // Renderizar UI local primero (para que no se vea vacío mientras Firebase conecta)
+    // Renderizar UI local primero
     prepararCacheBusqueda();
     aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
     poblarInputsPersonalizacion();
@@ -2309,7 +2170,6 @@ window.addEventListener('DOMContentLoaded', function() {
     console.log('[App] UI local renderizada con', productos.length, 'productos');
 
     // 🔥 INICIALIZAR FIREBASE AUTOMÁTICAMENTE
-    // Esto permite que CUALQUIER dispositivo vea los productos sin configurar nada
     inicializarFirebaseRealtime();
 
     // Listeners de colores
@@ -2358,29 +2218,13 @@ window.addEventListener('DOMContentLoaded', function() {
 
 
               <script>
-                              let savedFirebaseConfig = JSON.parse(localStorage.getItem('degustase_firebase') || 'null');
-let FIREBASE_CONFIG = {
-    apiKey: savedFirebaseConfig?.apiKey || '',
-    databaseURL: savedFirebaseConfig?.databaseURL || ''
-};
-
-const DEFAULT_FIREBASE_CONFIG = {
-    apiKey: "TU_API_KEY_AQUI",  // ← DEBES REEMPLAZAR
+                              const DEFAULT_FIREBASE_CONFIG = {
+    apiKey: "AIzaSyDL9SLXicxEdP-jy7eXmlscQOEjVuX9Qw8",
     databaseURL: "https://degustase-1eb19-default-rtdb.firebaseio.com"
 };
 
-let FIREBASE_CONFIG = {
-    apiKey: (savedFirebaseConfig && savedFirebaseConfig.apiKey) 
-        ? savedFirebaseConfig.apiKey 
-        : DEFAULT_FIREBASE_CONFIG.apiKey,
-    databaseURL: (savedFirebaseConfig && savedFirebaseConfig.databaseURL) 
-        ? savedFirebaseConfig.databaseURL 
-        : DEFAULT_FIREBASE_CONFIG.databaseURL
-};
-
-const DEFAULT_FIREBASE_CONFIG = {
-    apiKey: "TU_API_KEY_AQUI",
-    databaseURL: "https://degustase-1eb19-default-rtdb.firebaseio.com"
+const DEFAULT_IMGBB_CONFIG = {
+    apiKey: "7efbf40d667b245b4f9a49934114d67d"
 };
 
 
