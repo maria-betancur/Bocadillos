@@ -70,13 +70,10 @@ header nav a:hover, header nav a.active { background: var(--primary); color: whi
 
 .connection-indicator {
     position: fixed; top: calc(8px + var(--safe-top)); right: 8px; z-index: 200;
-    display: none; align-items: center; gap: 6px; padding: 6px 12px;
+    display: flex; align-items: center; gap: 6px; padding: 6px 12px;
     background: rgba(255,255,255,0.95); border-radius: 20px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1); font-size: 11px; font-weight: 700;
     transition: all 0.3s; cursor: pointer;
-}
-.connection-indicator.admin-visible {
-    display: flex;
 }
 .connection-indicator.connected { border: 2px solid var(--success); color: var(--success); }
 .connection-indicator.disconnected { border: 2px solid var(--danger); color: var(--danger); }
@@ -662,3 +659,1164 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
                                 <thead>
                                     <tr style="background:#f8fafc;">
                                         <th style="padding:10px; text-align:left;">Producto</th>
+                                        <th style="padding:10px;">Categoría</th>
+                                        <th style="padding:10px;">Precio</th>
+                                        <th style="padding:10px;">Imgs</th>
+                                        <th style="padding:10px;">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tablaCatalogo"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-categorias" class="admin-view">
+                    <div class="dashboard-card">
+                        <h4>🏷️ Nueva Categoría</h4>
+                        <div style="display:flex; gap:10px;">
+                            <input type="text" id="nuevaCategoriaInput" placeholder="Ej: Bocadillos" style="flex:1;">
+                            <button class="sync-btn primary" style="width:auto; padding:12px 20px;" onclick="agregarCategoria()">➕</button>
+                        </div>
+                    </div>
+                    <div class="dashboard-card">
+                        <h4>Categorías Existentes</h4>
+                        <div id="categoriasGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px;"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ================================================================
+   🔥 CONFIGURACIÓN DE FIREBASE - INCORPORADA EN EL CÓDIGO
+   ================================================================ */
+const DEFAULT_FIREBASE_CONFIG = {
+    apiKey: "AIzaSyDL9SLXicxEdP-jy7eXmlscQOEjVuX9Qw8",
+    databaseURL: "https://degustase-1eb19-default-rtdb.firebaseio.com"
+};
+
+const DEFAULT_IMGBB_CONFIG = {
+    apiKey: "7efbf40d667b245b4f9a49934114d67d"
+};
+
+/* ================================================================
+   ⚙️ CONFIGURACIÓN FINAL
+   ================================================================ */
+let savedFirebaseConfig = JSON.parse(localStorage.getItem('degustase_firebase') || 'null');
+let FIREBASE_CONFIG = {
+    apiKey: (savedFirebaseConfig && savedFirebaseConfig.apiKey) ? savedFirebaseConfig.apiKey : DEFAULT_FIREBASE_CONFIG.apiKey,
+    databaseURL: (savedFirebaseConfig && savedFirebaseConfig.databaseURL) ? savedFirebaseConfig.databaseURL : DEFAULT_FIREBASE_CONFIG.databaseURL
+};
+
+let savedImgbbConfig = JSON.parse(localStorage.getItem('degustase_imgbb') || 'null');
+let IMGBB_CONFIG = {
+    apiKey: (savedImgbbConfig && savedImgbbConfig.apiKey) ? savedImgbbConfig.apiKey : DEFAULT_IMGBB_CONFIG.apiKey
+};
+
+/* ================================================================
+   🔒 SEGURIDAD - BOTÓN ADMIN OCULTO POR DEFECTO
+   ================================================================ */
+let adminModeActivo = false;
+let PIN_ADMIN = localStorage.getItem('degustase_admin_pin') || '55555';
+
+/* ================================================================
+   🔥 ESTADO DE FIREBASE
+   ================================================================ */
+let firebaseApp = null;
+let firebaseDB = null;
+let datosRef = null;
+let connectedRef = null;
+let firebaseConnected = false;
+let firebaseInitialized = false;
+let persistenceEnabled = false;
+let primeraCargaFirebase = true;
+let ultimaSyncVisual = null;
+
+/* ================================================================
+   🧠 DATOS LOCALES
+   ================================================================ */
+const TIENDA_DEFAULTS = {
+    name: "DEGUSTASE",
+    title: "¡Bienvenido a Degustase!",
+    desc: "Bocadillos y snacks artesanales, hechos con amor. 🥨",
+    whatsapp: "573118108837",
+    primaryColor: "#16a34a",
+    accentColor: "#2563eb"
+};
+
+const PRODUCTOS_DEMO = [
+    {id: '1', nombre: "Bocadillo Artesanal de Guayaba", precio: "$12.000", categoria: "Bocadillos", imagenes: ["https://image.qwenlm.ai/public_source/e487baee-e106-4d0b-a144-436c03905c5f/1bb23e030-d6f9-43a7-8f10-ce5e1bc73cdd.png", "https://image.qwenlm.ai/public_source/e487baee-e106-4d0b-a144-436c03905c5f/1c71f3866-7df5-493f-a8ec-e79e212757f8.png"]},
+    {id: '2', nombre: "Mini Empanaditas Crujientes x4", precio: "$15.000", categoria: "Salados", imagenes: ["https://image.qwenlm.ai/public_source/e487baee-e106-4d0b-a144-436c03905c5f/1335e19cc-1b3a-4b1d-9ce4-65e692be2ac6.png"]},
+    {id: '3', nombre: "Alfajor de Arequipe", precio: "", categoria: "Dulces", imagenes: ["https://image.qwenlm.ai/public_source/e487baee-e106-4d0b-a144-436c03905c5f/13e16dfd7-92f3-4c9d-b603-3c65bcdcb428.png"]}
+];
+
+let productos = JSON.parse(localStorage.getItem('degustase_productos') || 'null') || JSON.parse(JSON.stringify(PRODUCTOS_DEMO));
+let categorias = JSON.parse(localStorage.getItem('degustase_categorias') || 'null') || ['Bocadillos', 'Salados', 'Dulces', 'Bebidas'];
+let tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, JSON.parse(localStorage.getItem('degustase_tienda') || 'null'));
+let ultimaActualizacionLocal = parseInt(localStorage.getItem('degustase_last_push') || '0');
+
+let carrito = [];
+let categoriaActual = "Todos";
+let productoEditandoIndex = null;
+let productoDetalleIndex = null;
+let detalleImagenActual = 0;
+let imagenesProductoTemp = [];
+let imagenesEdicionTemp = [];
+
+const PLACEHOLDER_IMG = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#e9f9ef"/><text x="150" y="175" font-size="90" text-anchor="middle">🥨</text><text x="150" y="230" font-size="22" text-anchor="middle" fill="#16a34a" font-family="sans-serif" font-weight="bold">DEGUSTASE</text></svg>');
+
+function genId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function guardarLocal() {
+    try {
+        localStorage.setItem('degustase_productos', JSON.stringify(productos));
+        localStorage.setItem('degustase_categorias', JSON.stringify(categorias));
+        localStorage.setItem('degustase_tienda', JSON.stringify(tiendaConfig));
+        localStorage.setItem('degustase_last_push', ultimaActualizacionLocal.toString());
+        return true;
+    } catch (e) {
+        showToast("⚠️ Almacenamiento local lleno", "danger");
+        return false;
+    }
+}
+
+/* ================================================================
+   🔒 FUNCIONES DE SEGURIDAD - BOTÓN ADMIN
+   ================================================================ */
+
+function actualizarVisibilidadBotonAdmin() {
+    var container = document.getElementById('adminButtonsContainer');
+    if (!container) return;
+    if (adminModeActivo) container.classList.remove('admin-hidden');
+    else container.classList.add('admin-hidden');
+}
+
+function ocultarBotonAdmin() {
+    if (!confirm("¿Ocultar el botón Admin de este dispositivo?\n\nPara volver a activarlo, toca el logo \"DEGUSTASE\" 5 veces seguidas rápidamente.")) return;
+    adminModeActivo = false;
+    localStorage.setItem('degustase_admin_mode', 'false');
+    actualizarVisibilidadBotonAdmin();
+    showToast('🙈 Botón Admin ocultado. Usa el gesto secreto para volver a activarlo.', 'warning');
+    logSync(' Botón Admin ocultado en este dispositivo', 'info');
+}
+
+function mostrarBotonAdmin() {
+    adminModeActivo = true;
+    localStorage.setItem('degustase_admin_mode', 'true');
+    actualizarVisibilidadBotonAdmin();
+}
+
+let toquesLogo = 0;
+let timerToquesLogo = null;
+const TOQUES_REQUERIDOS = 5;
+const TIEMPO_MAXIMO_TOQUES = 2000;
+
+function registrarToqueLogo() {
+    toquesLogo++;
+    if (toquesLogo >= 2) {
+        var hint = document.getElementById('adminActivationHint');
+        if (hint) {
+            hint.textContent = ' Toques: ' + toquesLogo + '/' + TOQUES_REQUERIDOS;
+            hint.classList.add('visible');
+        }
+    }
+    if (timerToquesLogo) clearTimeout(timerToquesLogo);
+    timerToquesLogo = setTimeout(function() {
+        toquesLogo = 0;
+        var hint = document.getElementById('adminActivationHint');
+        if (hint) hint.classList.remove('visible');
+    }, TIEMPO_MAXIMO_TOQUES);
+
+    if (toquesLogo >= TOQUES_REQUERIDOS) {
+        toquesLogo = 0;
+        if (timerToquesLogo) clearTimeout(timerToquesLogo);
+        var hint = document.getElementById('adminActivationHint');
+        if (hint) hint.classList.remove('visible');
+        if (!adminModeActivo) {
+            mostrarBotonAdmin();
+            showToast('🔓 ¡Modo Admin activado! El botón ya es visible.', 'success');
+            logSync('🔓 Modo Admin activado por gesto secreto', 'success');
+        } else {
+            abrirLogin();
+        }
+    }
+}
+
+function cambiarPin() {
+    var nuevoPin = document.getElementById('nuevoPinInput').value.trim();
+    if (!nuevoPin || nuevoPin.length < 4) { showToast('⚠️ El PIN debe tener al menos 4 dígitos', 'warning'); return; }
+    if (!/^\d+$/.test(nuevoPin)) { showToast('⚠️ El PIN solo puede contener números', 'warning'); return; }
+    PIN_ADMIN = nuevoPin;
+    localStorage.setItem('degustase_admin_pin', nuevoPin);
+    document.getElementById('nuevoPinInput').value = '';
+    document.getElementById('pinActualDisplay').textContent = nuevoPin;
+    showToast('✅ PIN cambiado correctamente', 'success');
+    logSync('🔑 PIN de admin cambiado', 'success');
+}
+
+/* ================================================================
+   📋 REGISTRO DE SINCRONIZACIÓN
+   ================================================================ */
+function logSync(message, type) {
+    type = type || 'info';
+    var log = document.getElementById('syncLog');
+    if (!log) return;
+    var now = new Date();
+    var time = now.toLocaleTimeString('es-CO');
+    var entry = document.createElement('div');
+    entry.className = 'sync-log-entry ' + type;
+    entry.innerHTML = '<span class="time">' + time + '</span><span>' + message + '</span>';
+    log.insertBefore(entry, log.firstChild);
+    while (log.children.length > 30) log.removeChild(log.lastChild);
+}
+
+/* ================================================================
+   🔥 FIREBASE - INICIALIZACIÓN AUTOMÁTICA
+   ================================================================ */
+function firebaseConfigValida() {
+    return FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== '' && FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.databaseURL !== '';
+}
+
+function inicializarAppFirebase() {
+    if (firebaseApp) return firebaseApp;
+    if (firebase.apps && firebase.apps.length > 0) { firebaseApp = firebase.apps[0]; return firebaseApp; }
+    firebaseApp = firebase.initializeApp({ apiKey: FIREBASE_CONFIG.apiKey, databaseURL: FIREBASE_CONFIG.databaseURL });
+    return firebaseApp;
+}
+
+function activarPersistencia() {
+    if (persistenceEnabled) return;
+    if (!firebaseDB) return;
+    try { firebaseDB.setPersistenceEnabled(true); firebaseDB.setPersistenceCacheSizeBytes(50 * 1024 * 1024); persistenceEnabled = true; logSync('💾 Persistencia offline activada', 'success'); } catch (e) { persistenceEnabled = true; }
+}
+
+function limpiarListenersPrevios() {
+    try { if (datosRef) datosRef.off(); } catch (e) {}
+    try { if (connectedRef) connectedRef.off(); } catch (e) {}
+    datosRef = null; connectedRef = null;
+}
+
+function inicializarFirebaseRealtime() {
+    console.log('[Firebase] Inicializando...');
+    if (!firebaseConfigValida()) { logSync('❌ Firebase: configuración inválida', 'error'); actualizarIndicadorConexion('disconnected'); return; }
+    try {
+        limpiarListenersPrevios();
+        inicializarAppFirebase();
+        firebaseDB = firebase.database();
+        activarPersistencia();
+        try { firebaseDB.goOnline(); } catch(e) {}
+        datosRef = firebaseDB.ref("datos");
+        connectedRef = firebaseDB.ref(".info/connected");
+        logSync('🔄 Conectando a Firebase...', 'info');
+        connectedRef.on('value', function(snapshot) {
+            var connected = snapshot.val() === true;
+            if (connected && !firebaseConnected) {
+                firebaseConnected = true;
+                logSync('✅ Firebase: conectado', 'success');
+                actualizarIndicadorConexion('connected'); actualizarPillsEstado(); actualizarEstadisticas();
+                var st = document.getElementById('firebaseStatus');
+                if (st) st.innerHTML = '<span style="color:var(--success);">✅ Firebase: conectado<br>📥 Leyendo datos en tiempo real...</span>';
+            } else if (!connected && firebaseConnected) {
+                firebaseConnected = false;
+                logSync('⚠️ Conexión perdida. Reconectando...', 'warning');
+                actualizarIndicadorConexion('syncing'); actualizarPillsEstado(); actualizarEstadisticas();
+            } else if (!connected && !firebaseConnected) { actualizarIndicadorConexion('syncing'); }
+        }, function(error) { console.warn('[Firebase ERROR] Listener connected:', error); });
+        primeraCargaFirebase = true;
+        datosRef.on('value', function(snapshot) { manejarDatosFirebase(snapshot); }, function(error) { manejarErrorFirebase(error); });
+        firebaseInitialized = true;
+        actualizarPillsEstado(); actualizarIndicadorConexion('syncing');
+    } catch (error) {
+        console.error('[Firebase ERROR]', error);
+        logSync('❌ Error: ' + error.message, 'error');
+        firebaseConnected = false; actualizarIndicadorConexion('disconnected'); actualizarPillsEstado();
+    }
+}
+
+/* ================================================================
+   🔥 FIREBASE - LECTURA Y ESCRITURA
+   ================================================================ */
+function normalizarArray(data) {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'object') return Object.values(data);
+    return [];
+}
+
+function aplicarDatosFirebase(datos) {
+    if (!datos) return;
+    var algoCambio = false;
+    if (datos.productos !== undefined && datos.productos !== null) {
+        var nuevosProductos = normalizarArray(datos.productos);
+        nuevosProductos.forEach(function(p) {
+            if (!p.id) p.id = genId();
+            if (!Array.isArray(p.imagenes)) p.imagenes = p.imagenes ? [p.imagenes] : [];
+        });
+        productos = nuevosProductos; algoCambio = true;
+    }
+    if (datos.categorias !== undefined && datos.categorias !== null) {
+        categorias = normalizarArray(datos.categorias);
+        if (categorias.length === 0) categorias = ['General'];
+        algoCambio = true;
+    }
+    if (datos.tiendaConfig) { tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig); algoCambio = true; }
+    if (datos.ultimaActualizacion) { ultimaActualizacionLocal = datos.ultimaActualizacion; localStorage.setItem('degustase_last_push', ultimaActualizacionLocal.toString()); }
+    if (algoCambio) {
+        guardarLocal(); prepararCacheBusqueda();
+        aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
+        syncTiendaUI(); poblarInputsPersonalizacion();
+        renderProductos(); renderSelectCategorias(); renderCategoriasAdmin(); renderNavCategorias();
+        actualizarEstadisticas();
+        var adminPanel = document.getElementById("adminPanel");
+        if (adminPanel && adminPanel.style.display === "flex") renderCatalogo();
+    }
+}
+
+function manejarDatosFirebase(snapshot) {
+    if (!snapshot) return;
+    var datos;
+    try { datos = snapshot.val(); } catch(e) { logSync(' Error al leer snapshot', 'error'); return; }
+    if (!datos) {
+        if (primeraCargaFirebase) {
+            logSync('️ Firebase vacío. Datos locales conservados.', 'info');
+            var st = document.getElementById('firebaseStatus');
+            if (st) st.innerHTML = '<span style="color:var(--success);">✅ Conectado. Base vacía. Pulsa "⬆️ Subir catálogo" para enviar datos.</span>';
+            primeraCargaFirebase = false;
+        }
+        return;
+    }
+    var tsRemoto = datos.ultimaActualizacion || 0;
+    if (!primeraCargaFirebase && tsRemoto > 0 && tsRemoto < ultimaActualizacionLocal) return;
+    primeraCargaFirebase = false;
+    var numProd = datos.productos ? normalizarArray(datos.productos).length : 0;
+    logSync('📥 Productos descargados: ' + numProd, 'success');
+    ultimaSyncVisual = new Date(); actualizarEstadisticas();
+    aplicarDatosFirebase(datos);
+}
+
+function manejarErrorFirebase(error) {
+    var mensaje = "Error de conexión";
+    if (error && error.code) {
+        switch(error.code) {
+            case 'PERMISSION_DENIED': mensaje = 'Permiso denegado'; break;
+            case 'NETWORK_ERROR': mensaje = 'Error de red. Reintentando...'; break;
+            case 'INVALID_TOKEN': mensaje = 'Token inválido'; break;
+            default: mensaje = error.message || error.code;
+        }
+    } else if (error && error.message) { mensaje = error.message; }
+    logSync('❌ Error Firebase: ' + mensaje, 'error');
+    firebaseConnected = false; actualizarPillsEstado(); actualizarIndicadorConexion('syncing'); actualizarEstadisticas();
+}
+
+function reconectarManual() {
+    if (!firebaseConfigValida()) { showToast("⚠️ Configuración inválida", "warning"); return; }
+    logSync('🔄 Reconexión manual...', 'info'); showToast('🔄 Reconectando...', 'success');
+    firebaseInitialized = false; firebaseConnected = false;
+    if (firebaseDB) { try { limpiarListenersPrevios(); } catch(e) {} firebaseDB = null; }
+    inicializarFirebaseRealtime();
+}
+
+function subirDatosANube() {
+    if (!datosRef) { showToast("⚠️ Firebase no está conectado", "warning"); logSync('❌ Firebase no conectado', 'error'); return; }
+    actualizarIndicadorConexion('syncing'); logSync(' Subiendo datos...', 'info'); showToast(" Subiendo a Firebase...", "success");
+    var ahora = Date.now(); ultimaActualizacionLocal = ahora;
+    datosRef.set({ productos: productos, categorias: categorias, tiendaConfig: tiendaConfig, ultimaActualizacion: ahora })
+        .then(function() {
+            localStorage.setItem('degustase_last_push', ahora.toString());
+            logSync('✅ Datos subidos correctamente', 'success'); showToast("✅ Catálogo guardado en la nube", "success");
+            ultimaSyncVisual = new Date(); actualizarEstadisticas();
+        }).catch(function(error) { logSync('❌ Error al subir: ' + (error.message || error), 'error'); showToast("❌ Error: " + (error.message || 'Desconocido'), "danger"); });
+}
+
+function descargarDatosDeNube() {
+    if (!datosRef) { showToast("️ Firebase no está conectado", "warning"); return; }
+    actualizarIndicadorConexion('syncing'); logSync('📥 Descargando datos...', 'info'); showToast("📥 Descargando de Firebase...", "success");
+    datosRef.once("value").then(function(snapshot) {
+        var datos = snapshot.val();
+        if (datos && (datos.productos || datos.categorias || datos.tiendaConfig)) {
+            aplicarDatosFirebase(datos);
+            var numProd = productos.length;
+            logSync('✅ Productos descargados: ' + numProd, 'success'); showToast('✅ ' + numProd + ' productos descargados', "success");
+            ultimaSyncVisual = new Date(); actualizarEstadisticas();
+        } else { logSync('ℹ️ No hay datos en Firebase', 'info'); showToast("ℹ️ No hay datos en Firebase aún", "warning"); }
+    }).catch(function(error) { logSync('❌ Error al descargar: ' + (error.message || error), 'error'); showToast("❌ Error: " + (error.message || 'Desconocido'), "danger"); });
+}
+
+function forzarDescarga() {
+    if (!datosRef) { showToast("⚠️ Firebase no está conectado", "warning"); return; }
+    if (!confirm("¿Forzar descarga? Esto reemplazará los datos locales con los de Firebase.")) return;
+    actualizarIndicadorConexion('syncing'); logSync('⚡ Forzando descarga...', 'info');
+    datosRef.once("value").then(function(snapshot) {
+        var datos = snapshot.val();
+        if (datos && (datos.productos || datos.categorias || datos.tiendaConfig)) {
+            if (datos.productos !== undefined && datos.productos !== null) {
+                var nuevosProductos = normalizarArray(datos.productos);
+                nuevosProductos.forEach(function(p) { if (!p.id) p.id = genId(); if (!Array.isArray(p.imagenes)) p.imagenes = p.imagenes ? [p.imagenes] : []; });
+                productos = nuevosProductos;
+            }
+            if (datos.categorias !== undefined && datos.categorias !== null) { categorias = normalizarArray(datos.categorias); if (categorias.length === 0) categorias = ['General']; }
+            if (datos.tiendaConfig) tiendaConfig = Object.assign({}, TIENDA_DEFAULTS, datos.tiendaConfig);
+            if (datos.ultimaActualizacion) ultimaActualizacionLocal = datos.ultimaActualizacion;
+            guardarLocal(); prepararCacheBusqueda();
+            aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
+            syncTiendaUI(); poblarInputsPersonalizacion();
+            renderProductos(); renderSelectCategorias(); renderCategoriasAdmin(); renderNavCategorias(); renderCatalogo(); actualizarEstadisticas();
+            logSync('✅ Descarga forzada: ' + productos.length + ' productos', 'success'); showToast('✅ ' + productos.length + ' productos descargados', "success");
+            ultimaSyncVisual = new Date();
+        } else { logSync('ℹ️ Firebase vacío', 'info'); showToast("ℹ️ No hay datos en Firebase", "warning"); }
+    }).catch(function(error) { logSync('❌ Error: ' + (error.message || error), 'error'); showToast(" Error: " + (error.message || 'Desconocido'), "danger"); });
+}
+
+/* ================================================================
+   🎛️ INDICADORES DE ESTADO
+   ================================================================ */
+function actualizarIndicadorConexion(estado) {
+    var indicator = document.getElementById('connectionIndicator');
+    var text = document.getElementById('connectionText');
+    if (!indicator || !text) return;
+    var estadoReal = estado;
+    if (!estadoReal) {
+        if (!firebaseConfigValida()) estadoReal = 'disconnected';
+        else if (firebaseConnected) estadoReal = 'connected';
+        else estadoReal = 'syncing';
+    }
+    indicator.className = 'connection-indicator ' + estadoReal;
+    switch(estadoReal) { case 'connected': text.textContent = 'Conectado'; break; case 'syncing': text.textContent = 'Conectando...'; break; case 'disconnected': text.textContent = 'Sin conexión'; break; }
+}
+
+function mostrarEstadoConexion() {
+    if (firebaseConnected) showToast('✅ Firebase conectado. Sincronización en tiempo real activa.', 'success');
+    else if (firebaseConfigValida()) showToast('🔄 Firebase está intentando conectarse...', 'warning');
+    else showToast('⚠️ Error de configuración', 'warning');
+}
+
+function actualizarPillsEstado() {
+    var pf = document.getElementById('pillFirebase');
+    var pi = document.getElementById('pillImgbb');
+    if (pf) {
+        if (firebaseConnected) { pf.className = 'status-pill on'; pf.textContent = '🔥 Firebase: conectado'; }
+        else if (firebaseConfigValida()) { pf.className = 'status-pill off'; pf.textContent = '🔥 Firebase: conectando...'; }
+        else { pf.className = 'status-pill off'; pf.textContent = ' Firebase: sin configurar'; }
+    }
+    if (pi) { if (IMGBB_CONFIG.apiKey) { pi.className = 'status-pill on'; pi.textContent = '🖼️ ImgBB: configurado'; } else { pi.className = 'status-pill off'; pi.textContent = '🖼️ ImgBB: sin configurar'; } }
+}
+
+function actualizarEstadisticas() {
+    var size = new Blob([JSON.stringify(productos)]).size;
+    var totalImgs = productos.reduce(function(acc, p) { return acc + ((p.imagenes && p.imagenes.length) || 0); }, 0);
+    var el = document.getElementById('statsInfo');
+    if (el) {
+        var estado;
+        if (firebaseConnected) estado = '☁️ Conectado - sincronizado en tiempo real';
+        else if (firebaseConfigValida()) estado = '🔄 Conectando automáticamente...';
+        else estado = '⚠️ Sin configurar';
+        var syncInfo = ultimaSyncVisual ? '<br>☁️ Última sincronización: ' + ultimaSyncVisual.toLocaleTimeString('es-CO') : '';
+        el.innerHTML = '📦 <strong>' + productos.length + '</strong> productos | 🖼️ <strong>' + totalImgs + '</strong> imágenes | 💾 <strong>' + (size/1024).toFixed(1) + ' KB</strong> | ' + estado + syncInfo;
+    }
+}
+
+/* ================================================================
+   🖼️ IMÁGENES (IMGBB + RESPALDO LOCAL)
+   ================================================================ */
+function subirUnaImagenImgBB(file, progressId, fillId, statusId, current, total) {
+    var progressDiv = document.getElementById(progressId);
+    var progressFill = document.getElementById(fillId);
+    var uploadStatus = document.getElementById(statusId);
+    if (progressDiv) progressDiv.classList.add('active');
+    if (progressFill) progressFill.style.width = Math.round((current / total) * 100) + '%';
+    if (uploadStatus) uploadStatus.textContent = 'Subiendo imagen ' + current + ' de ' + total;
+    return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function() {
+            var base64 = reader.result.split(',')[1];
+            var formData = new FormData();
+            formData.append('key', IMGBB_CONFIG.apiKey);
+            formData.append('image', base64);
+            fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: formData })
+                .then(function(response) { if (!response.ok) throw new Error('Error al subir a ImgBB'); return response.json(); })
+                .then(function(data) { resolve(data.data.display_url); })
+                .catch(reject);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function comprimirImagenLocal(file) {
+    return new Promise(function(resolve, reject) {
+        var img = new Image();
+        var url = URL.createObjectURL(file);
+        img.onload = function() {
+            var MAX = 700;
+            var w = img.width, h = img.height;
+            if (w > MAX || h > MAX) { var escala = Math.min(MAX / w, MAX / h); w = Math.round(w * escala); h = Math.round(h * escala); }
+            var canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            URL.revokeObjectURL(url);
+            resolve(canvas.toDataURL('image/jpeg', 0.82));
+        };
+        img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('Imagen inválida')); };
+        img.src = url;
+    });
+}
+
+function procesarArchivosImagen(input, contexto) {
+    var files = Array.from(input.files || []);
+    if (files.length === 0) return;
+    var lista = contexto === 'prod' ? imagenesProductoTemp : imagenesEdicionTemp;
+    var renderFn = contexto === 'prod' ? renderListaImagenesProducto : renderListaImagenesEdicion;
+    var progressId = contexto === 'prod' ? 'uploadProgress' : 'editUploadProgress';
+    var fillId = contexto === 'prod' ? 'progressFill' : 'editProgressFill';
+    var statusId = contexto === 'prod' ? 'uploadStatus' : 'editUploadStatus';
+    var agregadas = 0;
+    if (IMGBB_CONFIG.apiKey) {
+        var promesas = files.map(function(file, i) {
+            return subirUnaImagenImgBB(file, progressId, fillId, statusId, i + 1, files.length)
+                .then(function(url) { lista.push(url); agregadas++; })
+                .catch(function(e) { showToast("❌ " + e.message, "danger"); });
+        });
+        Promise.all(promesas).then(function() {
+            var progressDiv = document.getElementById(progressId);
+            var progressFill = document.getElementById(fillId);
+            if (progressFill) progressFill.style.width = '100%';
+            setTimeout(function() { if (progressDiv) progressDiv.classList.remove('active'); if (progressFill) progressFill.style.width = '0%'; }, 1500);
+            renderFn(); input.value = '';
+            if (agregadas > 0) showToast('✅ ' + agregadas + ' imagen(es) lista(s)', "success");
+        });
+    } else {
+        showToast("ℹ️ Sin ImgBB: las fotos se guardan comprimidas", "warning");
+        Promise.all(files.map(function(f) { return comprimirImagenLocal(f).then(function(dataUrl) { lista.push(dataUrl); agregadas++; }).catch(function() {}); })).then(function() {
+            renderFn(); input.value = '';
+            if (agregadas > 0) showToast('✅ ' + agregadas + ' imagen(es) lista(s)', "success");
+        });
+    }
+}
+
+function renderListaImagenesProducto() {
+    var cont = document.getElementById('prodImagesList'); if (!cont) return; cont.innerHTML = '';
+    imagenesProductoTemp.forEach(function(url, idx) {
+        var div = document.createElement('div');
+        div.className = 'image-item' + (idx === 0 ? ' main-img' : '');
+        div.innerHTML = '<img src="' + url + '" alt="img-' + idx + '"><button class="remove-img-btn" onclick="quitarImagenProducto(' + idx + ')">✕</button><span class="img-index">' + (idx === 0 ? '👑 Principal' : '#' + (idx + 1)) + '</span>';
+        cont.appendChild(div);
+    });
+}
+function quitarImagenProducto(idx) { imagenesProductoTemp.splice(idx, 1); renderListaImagenesProducto(); }
+
+function renderListaImagenesEdicion() {
+    var cont = document.getElementById('editImagesList'); if (!cont) return; cont.innerHTML = '';
+    imagenesEdicionTemp.forEach(function(url, idx) {
+        var div = document.createElement('div');
+        div.className = 'image-item' + (idx === 0 ? ' main-img' : '');
+        div.innerHTML = '<img src="' + url + '" alt="img-' + idx + '"><button class="remove-img-btn" onclick="quitarImagenEdicion(' + idx + ')">✕</button><span class="img-index">' + (idx === 0 ? '👑 Principal' : '#' + (idx + 1)) + '</span>';
+        cont.appendChild(div);
+    });
+}
+function quitarImagenEdicion(idx) { imagenesEdicionTemp.splice(idx, 1); renderListaImagenesEdicion(); }
+
+function agregarUrlsEdicion() {
+    var input = document.getElementById('editUrl');
+    var texto = input.value.trim();
+    if (!texto) { showToast("⚠️ Pega una o más URLs", "warning"); return; }
+    var nuevas = texto.split(/[,\n|]/).map(function(u) { return u.trim(); }).filter(function(u) { return u && u.indexOf('http') === 0; });
+    if (nuevas.length === 0) { showToast("⚠️ URLs no válidas", "warning"); return; }
+    nuevas.forEach(function(u) { imagenesEdicionTemp.push(u); });
+    renderListaImagenesEdicion(); input.value = '';
+    showToast('✅ ' + nuevas.length + ' URL(s) agregada(s)', "success");
+}
+
+/* ================================================================
+   🎨 COLORES DINÁMICOS
+   ================================================================ */
+function hexToRgb(hex) { hex = hex.replace('#', ''); if (hex.length === 3) hex = hex.split('').map(function(c) { return c + c; }).join(''); var n = parseInt(hex, 16); return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }; }
+function rgbToHex(r, g, b) { return '#' + [r, g, b].map(function(v) { return Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'); }).join(''); }
+function mezclarBlanco(hex, frac) { var rgb = hexToRgb(hex); return rgbToHex(255 + (rgb.r - 255) * frac, 255 + (rgb.g - 255) * frac, 255 + (rgb.b - 255) * frac); }
+function oscurecer(hex, frac) { var rgb = hexToRgb(hex); return rgbToHex(rgb.r * (1 - frac), rgb.g * (1 - frac), rgb.b * (1 - frac)); }
+function rgbaHex(hex, a) { var rgb = hexToRgb(hex); return 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + a + ')'; }
+
+function aplicarColores(primario, acento) {
+    var raiz = document.documentElement;
+    raiz.style.setProperty('--primary', primario); raiz.style.setProperty('--accent', acento);
+    raiz.style.setProperty('--primary-dark', oscurecer(primario, 0.15)); raiz.style.setProperty('--primary-glow', rgbaHex(primario, 0.4));
+    raiz.style.setProperty('--light', rgbaHex(primario, 0.09)); raiz.style.setProperty('--accent-light', rgbaHex(acento, 0.12));
+    raiz.style.setProperty('--bg-top', mezclarBlanco(primario, 0.08)); raiz.style.setProperty('--bg-bottom', mezclarBlanco(acento, 0.09));
+    var metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) metaTheme.setAttribute('content', primario);
+}
+
+const PRESETS_COLORES = [
+    { nombre: 'Verde & Azul', primario: '#16a34a', acento: '#2563eb' },
+    { nombre: 'Menta & Cielo', primario: '#059669', acento: '#0ea5e9' },
+    { nombre: 'Bosque & Mar', primario: '#0f766e', acento: '#0369a1' },
+    { nombre: 'Lima & Marino', primario: '#65a30d', acento: '#1d4ed8' }
+];
+
+function renderPresetsColores() {
+    var cont = document.getElementById('colorPresets'); cont.innerHTML = '';
+    PRESETS_COLORES.forEach(function(p) {
+        var chip = document.createElement('button');
+        chip.className = 'color-preset-chip';
+        chip.innerHTML = '<span class="swatch" style="background:' + p.primario + '"></span><span class="swatch" style="background:' + p.acento + '"></span>' + p.nombre;
+        chip.onclick = function() { document.getElementById('cfgColorPrimario').value = p.primario; document.getElementById('cfgColorAcento').value = p.acento; aplicarColores(p.primario, p.acento); showToast('🎨 Paleta "' + p.nombre + '" aplicada', "success"); };
+        cont.appendChild(chip);
+    });
+}
+
+function guardarPersonalizacion() {
+    tiendaConfig.name = document.getElementById('cfgNombreTienda').value.trim() || 'DEGUSTASE';
+    tiendaConfig.title = document.getElementById('cfgTituloBanner').value.trim() || '¡Bienvenido!';
+    tiendaConfig.desc = document.getElementById('cfgDescBanner').value.trim();
+    tiendaConfig.whatsapp = document.getElementById('cfgWhatsapp').value.replace(/[^0-9]/g, '') || '573118108837';
+    tiendaConfig.primaryColor = document.getElementById('cfgColorPrimario').value;
+    tiendaConfig.accentColor = document.getElementById('cfgColorAcento').value;
+    aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor); syncTiendaUI(); guardarLocal();
+    showToast("✅ Personalización guardada", "success");
+    if (firebaseConnected) subirDatosANube();
+}
+
+function restaurarPersonalizacion() {
+    if (!confirm("¿Restaurar textos y colores por defecto?")) return;
+    tiendaConfig = Object.assign({}, tiendaConfig, { name: TIENDA_DEFAULTS.name, title: TIENDA_DEFAULTS.title, desc: TIENDA_DEFAULTS.desc, primaryColor: TIENDA_DEFAULTS.primaryColor, accentColor: TIENDA_DEFAULTS.accentColor });
+    poblarInputsPersonalizacion(); aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor); syncTiendaUI(); guardarLocal();
+    showToast("↩️ Valores restaurados", "warning");
+    if (firebaseConnected) subirDatosANube();
+}
+
+function poblarInputsPersonalizacion() {
+    document.getElementById('cfgNombreTienda').value = tiendaConfig.name;
+    document.getElementById('cfgTituloBanner').value = tiendaConfig.title;
+    document.getElementById('cfgDescBanner').value = tiendaConfig.desc;
+    document.getElementById('cfgWhatsapp').value = tiendaConfig.whatsapp;
+    document.getElementById('cfgColorPrimario').value = tiendaConfig.primaryColor;
+    document.getElementById('cfgColorAcento').value = tiendaConfig.accentColor;
+}
+
+/* ================================================================
+   🔔 UTILIDADES
+   ================================================================ */
+function showToast(message, type) {
+    type = type || "success";
+    var toast = document.createElement('div');
+    toast.className = 'toast ' + type;
+    toast.innerHTML = message;
+    document.getElementById('toastContainer').appendChild(toast);
+    setTimeout(function() { toast.remove(); }, 3500);
+}
+
+function limpiarPrecio(p) {
+    if (typeof p === 'number') return p;
+    if (p === undefined || p === null) return 0;
+    var n = parseFloat(p.toString().replace(/[$.,\s]/g, ''));
+    return isNaN(n) ? 0 : n;
+}
+
+function formatearPrecio(n) {
+    var num = typeof n === 'string' ? limpiarPrecio(n) : n;
+    if (!num) return '<span class="consultar">Consultar</span>';
+    return '$' + num.toLocaleString('es-CO');
+}
+
+function formatearPrecioTexto(n) {
+    var num = typeof n === 'string' ? limpiarPrecio(n) : n;
+    if (!num) return 'Consultar';
+    return '$' + num.toLocaleString('es-CO');
+}
+
+function prepararCacheBusqueda() {
+    productos.forEach(function(p) { p._cache = ((p.nombre || '') + ' ' + (p.categoria || '')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); });
+}
+
+function obtenerImagenPrincipal(p) {
+    if (p.imagenes && p.imagenes.length > 0) return p.imagenes[0];
+    return PLACEHOLDER_IMG;
+}
+
+/* ================================================================
+   🏪 CATÁLOGO PÚBLICO
+   ================================================================ */
+function renderProductos(lista) {
+    var cont = document.getElementById('productos'); cont.innerHTML = '';
+    var arr = lista || productos;
+    arr.forEach(function(p, idx) {
+        var realIdx = lista ? productos.indexOf(p) : idx;
+        if (realIdx === -1) return;
+        if (!lista && categoriaActual !== 'Todos' && p.categoria !== categoriaActual) return;
+        var imagenes = p.imagenes && p.imagenes.length > 0 ? p.imagenes : [obtenerImagenPrincipal(p)];
+        var multi = imagenes.length > 1;
+        var cardId = 'card-' + realIdx;
+        var card = document.createElement('div');
+        card.className = 'card';
+        card.onclick = function() { abrirDetalle(realIdx); };
+        var galleryHtml = '';
+        if (multi) {
+            galleryHtml = '<div class="card-gallery" id="' + cardId + '">';
+            imagenes.forEach(function(url, i) { galleryHtml += '<img src="' + url + '" alt="' + (p.nombre || '') + '" class="' + (i === 0 ? 'active' : '') + '" data-idx="' + i + '">'; });
+            galleryHtml += '<button class="gallery-nav-btn prev" onclick="event.stopPropagation(); cambiarImagenCard(\'' + cardId + '\', -1)">‹</button>';
+            galleryHtml += '<button class="gallery-nav-btn next" onclick="event.stopPropagation(); cambiarImagenCard(\'' + cardId + '\', 1)">›</button>';
+            galleryHtml += '<div class="gallery-dots">';
+            imagenes.forEach(function(_, i) { galleryHtml += '<span class="dot ' + (i === 0 ? 'active' : '') + '" onclick="event.stopPropagation(); irImagenCard(\'' + cardId + '\', ' + i + ')"></span>'; });
+            galleryHtml += '</div>';
+            galleryHtml += '<div class="variant-badge">' + imagenes.length + ' fotos</div>';
+            galleryHtml += '</div>';
+        } else { galleryHtml = '<img src="' + imagenes[0] + '" alt="' + (p.nombre || '') + '">'; }
+        card.innerHTML = '<div class="card-top">' + galleryHtml + '</div>' +
+            '<div class="card-info">' +
+            '<span class="category-tag">' + (p.categoria || '') + '</span>' +
+            '<h3>' + (p.nombre || '') + '</h3>' +
+            '<p class="price">' + formatearPrecio(p.precio) + '</p>' +
+            '</div>' +
+            '<button class="add-btn-floating" onclick="event.stopPropagation(); event.preventDefault(); agregarAlCarro(' + realIdx + ')">+</button>';
+        cont.appendChild(card);
+    });
+    if (cont.children.length === 0) {
+        cont.innerHTML = '<div class="empty-catalog">🥨<strong>Aún no hay productos publicados</strong><small>Entra al Admin → ➕ Nuevo Producto,<br>o descarga el catálogo desde Firebase en ☁️ Sincronización.</small></div>';
+    }
+}
+
+function cambiarImagenCard(cardId, dir) {
+    var cont = document.getElementById(cardId); if (!cont) return;
+    var imgs = cont.querySelectorAll('img'); var dots = cont.querySelectorAll('.dot');
+    var activeIdx = 0; imgs.forEach(function(img, i) { if (img.classList.contains('active')) activeIdx = i; });
+    var newIdx = activeIdx + dir;
+    if (newIdx < 0) newIdx = imgs.length - 1; if (newIdx >= imgs.length) newIdx = 0;
+    imgs.forEach(function(img) { img.classList.remove('active'); }); dots.forEach(function(dot) { dot.classList.remove('active'); });
+    imgs[newIdx].classList.add('active'); if (dots[newIdx]) dots[newIdx].classList.add('active');
+}
+
+function irImagenCard(cardId, idx) {
+    var cont = document.getElementById(cardId); if (!cont) return;
+    var imgs = cont.querySelectorAll('img'); var dots = cont.querySelectorAll('.dot');
+    imgs.forEach(function(img) { img.classList.remove('active'); }); dots.forEach(function(dot) { dot.classList.remove('active'); });
+    if (imgs[idx]) imgs[idx].classList.add('active'); if (dots[idx]) dots[idx].classList.add('active');
+}
+
+function renderSelectCategorias() {
+    var sel = document.getElementById('prodCategoria'); var selEdit = document.getElementById('editCategoria');
+    [sel, selEdit].forEach(function(s) {
+        if (!s) return;
+        var valorActual = s.value; s.innerHTML = '';
+        categorias.forEach(function(c) { var o = document.createElement('option'); o.value = c; o.textContent = c; s.appendChild(o); });
+        if (valorActual && categorias.indexOf(valorActual) !== -1) s.value = valorActual;
+    });
+}
+
+function renderCategoriasAdmin() {
+    var grid = document.getElementById('categoriasGrid'); if (!grid) return; grid.innerHTML = '';
+    categorias.forEach(function(c, i) {
+        var count = productos.filter(function(p) { return p.categoria === c; }).length;
+        var card = document.createElement('div');
+        card.style.cssText = 'background:#f8fafc; border:2px solid var(--gray-border); border-radius:12px; padding:15px; text-align:center; position:relative;';
+        card.innerHTML = '<button onclick="eliminarCategoria(' + i + ')" style="position:absolute; top:5px; right:5px; background:var(--danger); color:white; border:none; width:22px; height:22px; border-radius:50%; cursor:pointer;">✕</button><div style="font-weight:700;">' + c + '</div><div style="font-size:11px; color:#64748b;">' + count + ' prod.</div>';
+        grid.appendChild(card);
+    });
+}
+
+function renderNavCategorias() {
+    var nav = document.getElementById('navCategorias');
+    nav.innerHTML = '<a href="#" class="' + (categoriaActual === 'Todos' ? 'active' : '') + '" onclick="filtrarCategoria(\'Todos\', this); return false;">Todos</a>';
+    categorias.forEach(function(c) {
+        var a = document.createElement('a'); a.href = '#'; a.className = categoriaActual === c ? 'active' : ''; a.textContent = c;
+        a.onclick = function(e) { e.preventDefault(); filtrarCategoria(c, a); };
+        nav.appendChild(a);
+    });
+}
+
+function agregarCategoria() {
+    var input = document.getElementById('nuevaCategoriaInput');
+    var nombre = input.value.trim();
+    if (!nombre || categorias.some(function(c) { return c.toLowerCase() === nombre.toLowerCase(); })) { showToast("️ Nombre inválido o duplicado", "danger"); return; }
+    categorias.push(nombre.charAt(0).toUpperCase() + nombre.slice(1).toLowerCase());
+    guardarLocal(); input.value = '';
+    renderSelectCategorias(); renderCategoriasAdmin(); renderNavCategorias();
+    showToast("✅ Categoría creada", "success");
+    if (firebaseConnected) subirDatosANube();
+}
+
+function eliminarCategoria(i) {
+    var c = categorias[i];
+    if (productos.some(function(p) { return p.categoria === c; })) { showToast("⚠️ Tiene productos asignados", "danger"); return; }
+    if (confirm('¿Eliminar "' + c + '"?')) {
+        categorias.splice(i, 1); guardarLocal();
+        renderSelectCategorias(); renderCategoriasAdmin(); renderNavCategorias();
+        showToast("🗑️ Categoría eliminada", "danger");
+        if (firebaseConnected) subirDatosANube();
+    }
+}
+
+function filtrarCategoria(cat, elem) {
+    categoriaActual = cat;
+    document.querySelectorAll('header nav a').forEach(function(a) { a.classList.remove('active'); });
+    elem.classList.add('active');
+    document.getElementById('seccionTitulo').textContent = cat === 'Todos' ? 'Todos los Productos' : 'Categoría: ' + cat;
+    renderProductos();
+}
+
+/* ================================================================
+    CREAR / EDITAR PRODUCTOS
+   ================================================================ */
+function guardarNuevoProducto() {
+    var nombre = document.getElementById('prodNombre').value.trim();
+    var precioRaw = document.getElementById('prodPrecio').value.trim();
+    var urlsInput = document.getElementById('prodUrlImg').value.trim();
+    var imagenes = imagenesProductoTemp.slice();
+    if (urlsInput) { var extras = urlsInput.split(/[,\n|]/).map(function(u) { return u.trim(); }).filter(function(u) { return u && u.indexOf('http') === 0; }); imagenes = imagenes.concat(extras); }
+    if (!nombre) { showToast("⚠️ El nombre es obligatorio", "danger"); return; }
+    var imagenesFinales = [];
+    imagenes.forEach(function(u) { if (u && u.trim() !== '' && imagenesFinales.indexOf(u) === -1) imagenesFinales.push(u); });
+    productos.unshift({ id: genId(), nombre: nombre, precio: precioRaw ? formatearPrecio(limpiarPrecio(precioRaw)) : '', categoria: document.getElementById('prodCategoria').value, imagenes: imagenesFinales.length > 0 ? imagenesFinales : [PLACEHOLDER_IMG] });
+    if (!guardarLocal()) { productos.shift(); return; }
+    prepararCacheBusqueda(); renderProductos();
+    document.getElementById('prodNombre').value = ''; document.getElementById('prodPrecio').value = ''; document.getElementById('prodUrlImg').value = '';
+    imagenesProductoTemp = []; renderListaImagenesProducto();
+    showToast('✅ ' + nombre + ' publicado', "success");
+    if (firebaseConnected) subirDatosANube();
+}
+
+function abrirModalEdicion(index) {
+    if (index === undefined || index === null || !productos[index]) { showToast("⚠️ Error al abrir el producto", "danger"); return; }
+    productoEditandoIndex = index;
+    var prod = productos[index];
+    document.getElementById('editNombre').value = prod.nombre || '';
+    document.getElementById('editPrecio').value = limpiarPrecio(prod.precio) || '';
+    var select = document.getElementById('editCategoria'); select.innerHTML = '';
+    categorias.forEach(function(cat) { var option = document.createElement('option'); option.value = cat; option.textContent = cat; if (cat === prod.categoria) option.selected = true; select.appendChild(option); });
+    imagenesEdicionTemp = (prod.imagenes || []).slice();
+    renderListaImagenesEdicion(); document.getElementById('editUrl').value = '';
+    document.getElementById('editModal').style.display = 'flex';
+}
+
+function cerrarModalEdicion() {
+    document.getElementById('editModal').style.display = 'none';
+    productoEditandoIndex = null; imagenesEdicionTemp = [];
+    document.getElementById('editFileImg').value = ''; document.getElementById('editUrl').value = '';
+    renderListaImagenesEdicion();
+}
+
+function guardarEdicionProducto() {
+    if (productoEditandoIndex === null) return;
+    var nombre = document.getElementById('editNombre').value.trim();
+    var precioRaw = document.getElementById('editPrecio').value.trim();
+    var categoria = document.getElementById('editCategoria').value;
+    var urlsInput = document.getElementById('editUrl').value.trim();
+    var imagenes = imagenesEdicionTemp.slice();
+    if (urlsInput) { var extras = urlsInput.split(/[,\n|]/).map(function(u) { return u.trim(); }).filter(function(u) { return u && u.indexOf('http') === 0; }); imagenes = imagenes.concat(extras); }
+    if (!nombre) { showToast("️ El nombre es obligatorio", "danger"); return; }
+    var imagenesFinales = [];
+    imagenes.forEach(function(u) { if (u && u.trim() !== '' && imagenesFinales.indexOf(u) === -1) imagenesFinales.push(u); });
+    var respaldo = Object.assign({}, productos[productoEditandoIndex]);
+    productos[productoEditandoIndex].nombre = nombre;
+    productos[productoEditandoIndex].precio = precioRaw ? formatearPrecio(limpiarPrecio(precioRaw)) : '';
+    productos[productoEditandoIndex].categoria = categoria;
+    productos[productoEditandoIndex].imagenes = imagenesFinales.length > 0 ? imagenesFinales : [PLACEHOLDER_IMG];
+    if (!guardarLocal()) { productos[productoEditandoIndex] = respaldo; return; }
+    prepararCacheBusqueda(); renderProductos(); renderCatalogo();
+    cerrarModalEdicion();
+    showToast("✅ Producto actualizado", "success");
+    if (firebaseConnected) subirDatosANube();
+}
+
+/* ================================================================
+   🔍 DETALLE - ✅ CORREGIDO (innerHTML en lugar de textContent)
+   ================================================================ */
+function abrirDetalle(index) {
+    if (index === undefined || index === null || !productos[index]) return;
+    productoDetalleIndex = index;
+    var prod = productos[index];
+    var imagenes = prod.imagenes && prod.imagenes.length > 0 ? prod.imagenes : [obtenerImagenPrincipal(prod)];
+
+    document.getElementById('detailTitle').textContent = prod.nombre;
+    document.getElementById('detailCategoria').textContent = prod.categoria;
+    
+    // ✅ CORRECCIÓN: usar innerHTML para que <span class="consultar"> se renderice correctamente
+    document.getElementById('detailPrecio').innerHTML = formatearPrecio(prod.precio);
+
+    detalleImagenActual = 0;
+    renderGaleriaDetalle(imagenes);
+    document.getElementById('detailModal').style.display = 'flex';
+}
+
+function renderGaleriaDetalle(imagenes) {
+    var gallery = document.getElementById('detailGallery'); var thumbs = document.getElementById('detailThumbs');
+    gallery.innerHTML = ''; thumbs.innerHTML = '';
+    if (imagenes.length > 1) {
+        gallery.innerHTML += '<button class="gallery-nav-btn prev" onclick="cambiarImagenDetalle(-1)">‹</button>';
+        gallery.innerHTML += '<button class="gallery-nav-btn next" onclick="cambiarImagenDetalle(1)">›</button>';
+    }
+    imagenes.forEach(function(url, i) {
+        var img = document.createElement('img'); img.src = url; img.alt = 'Producto';
+        img.style.display = i === detalleImagenActual ? 'block' : 'none'; img.dataset.idx = i;
+        gallery.appendChild(img);
+    });
+    imagenes.forEach(function(url, i) {
+        var thumb = document.createElement('div');
+        thumb.className = 'detail-thumb' + (i === detalleImagenActual ? ' active' : '');
+        thumb.innerHTML = '<img src="' + url + '" alt="thumb-' + i + '">';
+        thumb.onclick = function() { irImagenDetalle(i); };
+        thumbs.appendChild(thumb);
+    });
+}
+
+function cambiarImagenDetalle(dir) {
+    if (productoDetalleIndex === null) return;
+    var prod = productos[productoDetalleIndex];
+    var imagenes = prod.imagenes && prod.imagenes.length > 0 ? prod.imagenes : [obtenerImagenPrincipal(prod)];
+    if (imagenes.length <= 1) return;
+    detalleImagenActual = (detalleImagenActual + dir + imagenes.length) % imagenes.length;
+    actualizarVistaDetalle(imagenes);
+}
+
+function irImagenDetalle(idx) {
+    if (productoDetalleIndex === null) return;
+    var prod = productos[productoDetalleIndex];
+    var imagenes = prod.imagenes && prod.imagenes.length > 0 ? prod.imagenes : [obtenerImagenPrincipal(prod)];
+    detalleImagenActual = idx;
+    actualizarVistaDetalle(imagenes);
+}
+
+function actualizarVistaDetalle(imagenes) {
+    var gallery = document.getElementById('detailGallery'); var thumbs = document.getElementById('detailThumbs');
+    var imgs = gallery.querySelectorAll('img');
+    imgs.forEach(function(img, i) { img.style.display = i === detalleImagenActual ? 'block' : 'none'; });
+    var thumbDivs = thumbs.querySelectorAll('.detail-thumb');
+    thumbDivs.forEach(function(t, i) { t.classList.toggle('active', i === detalleImagenActual); });
+}
+
+function cerrarDetalle() { document.getElementById('detailModal').style.display = 'none'; productoDetalleIndex = null; }
+function agregarDesdeDetalle() { if (productoDetalleIndex === null) return; agregarAlCarro(productoDetalleIndex); }
+
+/* ================================================================
+   📊 CATÁLOGO ADMIN
+   ================================================================ */
+function renderCatalogo() {
+    var tbody = document.getElementById('tablaCatalogo'); if (!tbody) return;
+    if (!productos || productos.length === 0) { tbody.innerHTML = '<tr><td colspan="5" style="padding:20px; text-align:center; color:#64748b;">No hay productos en el catálogo.</td></tr>'; return; }
+    var html = '';
+    for (var i = 0; i < productos.length; i++) {
+        var p = productos[i]; var numImgs = (p.imagenes && p.imagenes.length) || 0;
+        html += '<tr id="row-' + i + '">' +
+            '<td style="padding:10px;"><div style="font-weight:600;">' + (p.nombre || 'Sin nombre') + '</div></td>' +
+            '<td style="padding:10px; text-align:center;"><span style="background:var(--accent-light); padding:3px 8px; border-radius:8px; font-size:11px; font-weight:600; color:var(--accent);">' + (p.categoria || 'General') + '</span></td>' +
+            '<td style="padding:10px; text-align:center; font-weight:700; color:var(--primary);">' + formatearPrecio(p.precio) + '</td>' +
+            '<td style="padding:10px; text-align:center;"><span style="background:#e0e7ff; color:#4338ca; padding:3px 8px; border-radius:8px; font-size:11px; font-weight:700;">🖼️ ' + numImgs + '</span></td>' +
+            '<td style="padding:10px; text-align:center;"><button class="btn-action edit" onclick="abrirModalEdicion(' + i + ')">✏️ Editar</button> <button class="btn-action delete" onclick="eliminarProducto(' + i + ')">️</button></td>' +
+            '</tr>';
+    }
+    tbody.innerHTML = html;
+}
+
+function eliminarProducto(i) {
+    if (confirm("¿Eliminar este producto?")) {
+        var respaldo = productos[i]; productos.splice(i, 1);
+        if (!guardarLocal()) { productos.splice(i, 0, respaldo); return; }
+        prepararCacheBusqueda(); renderProductos(); renderCatalogo();
+        showToast("🗑️ Eliminado", "danger");
+        if (firebaseConnected) subirDatosANube();
+    }
+}
+
+function filtrarTablaCatalogo(q) {
+    q = q.toLowerCase().trim();
+    for (var i = 0; i < productos.length; i++) {
+        var p = productos[i]; var row = document.getElementById('row-' + i);
+        if (row) row.style.display = ((p.nombre || '').toLowerCase().indexOf(q) !== -1 || (p.categoria || '').toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+    }
+}
+
+/* ================================================================
+   🛒 CARRITO
+   ================================================================ */
+function toggleCart() { document.getElementById('cartSidebar').classList.toggle('open'); }
+
+function agregarAlCarro(i) {
+    var p = productos[i]; if (!p) return;
+    var existente = carrito.find(function(x) { return x.id === p.id; });
+    if (existente) existente.qty++;
+    else carrito.push({ id: p.id, nombre: p.nombre, precio: p.precio, imagen: obtenerImagenPrincipal(p), qty: 1 });
+    actualizarCarrito(); showToast('✅ ' + p.nombre, "success");
+}
+
+function cambiarCantidad(i, delta) {
+    if (!carrito[i]) return;
+    carrito[i].qty += delta;
+    if (carrito[i].qty <= 0) carrito.splice(i, 1);
+    actualizarCarrito();
+}
+
+function eliminarDelCarro(i) {
+    if (!carrito[i]) return;
+    var n = carrito[i].nombre; carrito.splice(i, 1);
+    actualizarCarrito(); showToast('🗑️ ' + n + ' eliminado', "danger");
+}
+
+function vaciarCarrito() {
+    if (carrito.length === 0) return;
+    if (confirm("¿Vaciar el carrito?")) { carrito = []; actualizarCarrito(); showToast(" Carrito vaciado", "warning"); }
+}
+
+function actualizarCarrito() {
+    var div = document.getElementById('carrito'); div.innerHTML = '';
+    var total = 0; var sinPrecio = 0; var totalQty = 0;
+    if (carrito.length === 0) {
+        div.innerHTML = '<div class="cart-empty">🛒<p>Tu carrito está vacío</p><small>Agrega bocadillos con el botón +</small></div>';
+        document.getElementById('vaciarBtn').style.display = 'none';
+    } else {
+        document.getElementById('vaciarBtn').style.display = '';
+        carrito.forEach(function(item, i) {
+            var precioNum = limpiarPrecio(item.precio);
+            total += precioNum * item.qty; totalQty += item.qty;
+            if (!precioNum) sinPrecio++;
+            var row = document.createElement('div'); row.className = 'cart-item';
+            row.innerHTML = '<img class="cart-thumb" src="' + item.imagen + '" alt="' + item.nombre + '">' +
+                '<div class="cart-item-info"><div class="nombre">' + item.nombre + '</div><div class="unit">' + formatearPrecio(item.precio) + '</div></div>' +
+                '<div class="qty-controls"><button class="qty-btn" onclick="cambiarCantidad(' + i + ',-1)">−</button><span class="qty-num">' + item.qty + '</span><button class="qty-btn" onclick="cambiarCantidad(' + i + ',1)">+</button></div>' +
+                '<button class="cart-remove" title="Eliminar" onclick="eliminarDelCarro(' + i + ')">🗑️</button>';
+            div.appendChild(row);
+        });
+    }
+    document.getElementById('total').textContent = total.toLocaleString('es-CO');
+    document.getElementById('cartCount').textContent = totalQty;
+    document.getElementById('cartNote').style.display = sinPrecio > 0 ? 'block' : 'none';
+}
+
+function comprar() {
+    if (carrito.length === 0) { showToast("⚠️ El carrito está vacío", "warning"); return; }
+    var msg = '*🥨 NUEVO PEDIDO - ' + tiendaConfig.name + '*\n\n*PRODUCTOS*\n';
+    var total = 0; var sinPrecio = 0;
+    carrito.forEach(function(item) {
+        var p = limpiarPrecio(item.precio); var sub = p * item.qty; total += sub;
+        if (p) msg += '• ' + item.nombre + ' x' + item.qty + ' = ' + formatearPrecioTexto(sub) + '\n';
+        else { msg += '• ' + item.nombre + ' x' + item.qty + ' = Precio a consultar\n'; sinPrecio++; }
+    });
+    msg += '\n*TOTAL: ' + formatearPrecioTexto(total) + '*';
+    if (sinPrecio > 0) msg += '\n_' + sinPrecio + ' producto(s) con precio a confirmar._';
+    carrito = []; actualizarCarrito(); toggleCart();
+    window.open('https://wa.me/' + tiendaConfig.whatsapp + '?text=' + encodeURIComponent(msg), '_blank');
+}
+
+/* ================================================================
+   🔍 BUSCADOR
+   ================================================================ */
+document.getElementById('buscadorCodigo').addEventListener('input', function(e) {
+    var q = e.target.value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    var resDiv = document.getElementById('resultadoBusqueda');
+    if (!q || q.length < 2) { resDiv.style.display = 'none'; renderProductos(); return; }
+    var resultados = productos.filter(function(p) { return p._cache && p._cache.indexOf(q) !== -1; }).slice(0, 10);
+    if (resultados.length === 0) { resDiv.innerHTML = '<div style="padding:20px; text-align:center; color:#94a3b8;">Sin resultados</div>'; }
+    else {
+        resDiv.innerHTML = resultados.map(function(p) {
+            var precioHtml = formatearPrecio(p.precio);
+            var precioClass = limpiarPrecio(p.precio) ? '' : ' consultar';
+            return '<div class="search-result-item" onclick="seleccionarBusqueda(\'' + p.id + '\')"><div><div class="sr-cat">' + p.categoria + '</div><div style="font-size:13px;">' + p.nombre + '</div></div><div class="sr-price' + precioClass + '">' + precioHtml + '</div></div>';
+        }).join('');
+    }
+    resDiv.style.display = 'block'; renderProductos(resultados);
+});
+
+function seleccionarBusqueda(id) {
+    var p = productos.find(function(x) { return x.id === id; });
+    if (p) { document.getElementById('buscadorCodigo').value = p.nombre; document.getElementById('resultadoBusqueda').style.display = 'none'; renderProductos([p]); }
+}
+
+/* ================================================================
+   🔐 ADMIN
+   ================================================================ */
+function abrirLogin() { document.getElementById('loginModal').style.display = 'flex'; document.getElementById('adminPassInput').value = ''; setTimeout(function() { document.getElementById('adminPassInput').focus(); }, 100); }
+function cerrarLogin() { document.getElementById('loginModal').style.display = 'none'; document.getElementById('adminPassInput').value = ''; }
+function verificarPassword() {
+    if (document.getElementById('adminPassInput').value === PIN_ADMIN) {
+        cerrarLogin(); document.getElementById('adminPanel').style.display = 'flex';
+        document.getElementById('pinActualDisplay').textContent = PIN_ADMIN;
+        actualizarEstadisticas(); actualizarPillsEstado(); renderCatalogo();
+    } else { showToast("❌ PIN incorrecto", "danger"); }
+}
+function cerrarAdmin() { document.getElementById('adminPanel').style.display = 'none'; aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor); poblarInputsPersonalizacion(); renderProductos(); }
+
+var TAB_TITULOS = {
+    'tab-config': 'Configuración API', 'tab-sincronizacion': 'Sincronización',
+    'tab-personalizacion': 'Personalización', 'tab-nuevo': 'Nuevo Producto',
+    'tab-catalogo': 'Catálogo de Productos', 'tab-categorias': 'Categorías', 'tab-seguridad': 'Seguridad'
+};
+
+function switchTab(id, btn) {
+    document.querySelectorAll('.admin-view').forEach(function(v) { v.classList.remove('active'); });
+    document.querySelectorAll('.admin-nav-item').forEach(function(b) { b.classList.remove('active'); });
+    document.getElementById(id).classList.add('active'); btn.classList.add('active');
+    document.getElementById('adminSectionTitle').textContent = TAB_TITULOS[id] || '';
+    if (id === 'tab-catalogo') renderCatalogo();
+    if (id === 'tab-categorias') renderCategoriasAdmin();
+    if (id === 'tab-sincronizacion') { actualizarEstadisticas(); actualizarPillsEstado(); }
+    if (id === 'tab-config') { document.getElementById('cfgFirebaseApiKey').value = FIREBASE_CONFIG.apiKey; document.getElementById('cfgFirebaseUrl').value = FIREBASE_CONFIG.databaseURL; }
+}
+
+function syncTiendaUI() {
+    document.getElementById('storeNameView').textContent = tiendaConfig.name;
+    document.getElementById('bannerTitleView').textContent = tiendaConfig.title;
+    document.getElementById('bannerDescView').textContent = tiendaConfig.desc;
+    document.title = tiendaConfig.name + ' - Catálogo de Bocadillos';
+}
+
+/* ================================================================
+   🚀 INICIO
+   ================================================================ */
+window.addEventListener('DOMContentLoaded', function() {
+    console.log('[App] DEGUSTASE iniciando...');
+    console.log('[App] 🔒 Botón Admin: OCULTO por defecto');
+
+    // 🔒 FORZAR botón Admin OCULTO al iniciar
+    adminModeActivo = false;
+    actualizarVisibilidadBotonAdmin();
+
+    // 🔐 Configurar el gesto secreto en el logo
+    var brand = document.getElementById('storeNameView');
+    if (brand) {
+        brand.addEventListener('click', function(e) { e.preventDefault(); registrarToqueLogo(); });
+        brand.addEventListener('touchend', function(e) { e.preventDefault(); registrarToqueLogo(); });
+    }
+
+    document.getElementById('cfgFirebaseApiKey').value = FIREBASE_CONFIG.apiKey;
+    document.getElementById('cfgFirebaseUrl').value = FIREBASE_CONFIG.databaseURL;
+    document.getElementById('pinActualDisplay').textContent = PIN_ADMIN;
+
+    if (IMGBB_CONFIG.apiKey) document.getElementById('imgbbStatus').innerHTML = '<span style="color:var(--success);">✅ Configurado automáticamente</span>';
+
+    prepararCacheBusqueda();
+    aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor);
+    poblarInputsPersonalizacion(); renderPresetsColores(); syncTiendaUI();
+    renderSelectCategorias(); renderCategoriasAdmin(); renderNavCategorias();
+    renderProductos(); actualizarCarrito(); actualizarEstadisticas(); actualizarPillsEstado(); actualizarIndicadorConexion();
+
+    inicializarFirebaseRealtime();
+
+    document.getElementById('cfgColorPrimario').addEventListener('input', function(e) { aplicarColores(e.target.value, document.getElementById('cfgColorAcento').value); });
+    document.getElementById('cfgColorAcento').addEventListener('input', function(e) { aplicarColores(document.getElementById('cfgColorPrimario').value, e.target.value); });
+
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden && firebaseConfigValida()) {
+            if (firebaseDB) { try { firebaseDB.goOnline(); } catch(e) {} }
+            else if (!firebaseInitialized) inicializarFirebaseRealtime();
+        }
+    });
+
+    window.addEventListener('online', function() {
+        if (firebaseConfigValida()) {
+            logSync('🌐 Internet restaurado', 'success');
+            if (firebaseDB) { try { firebaseDB.goOnline(); } catch(e) {} }
+            else inicializarFirebaseRealtime();
+        }
+    });
+
+    window.addEventListener('offline', function() {
+        firebaseConnected = false; logSync('📴 Sin internet', 'warning');
+        actualizarIndicadorConexion('syncing'); actualizarPillsEstado(); actualizarEstadisticas();
+    });
+});
+</script>
+</body>
+</html>
