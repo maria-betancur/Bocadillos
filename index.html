@@ -1,4 +1,22 @@
-<!DOCTYPE html>
+
+                        <!DOCTYPE html>
+                        <html lang="en">
+                        <head>
+                            <meta charset="UTF-8">
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <style>
+                body {
+                  background-color: white; /* Ensure the iframe has a white background */
+                }
+
+                .connection-indicator { display: none; ... }
+.connection-indicator.admin-visible { display: flex; }
+
+
+              </style>
+                        </head>
+                        <body>
+                            <!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -68,12 +86,16 @@ header nav::-webkit-scrollbar { display: none; }
 header nav a { color: var(--text-dark); text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
 header nav a:hover, header nav a.active { background: var(--primary); color: white; }
 
+/* ✅ INDICADOR DE CONEXIÓN OCULTO POR DEFECTO - Solo visible en modo admin */
 .connection-indicator {
     position: fixed; top: calc(8px + var(--safe-top)); right: 8px; z-index: 200;
-    display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+    display: none; align-items: center; gap: 6px; padding: 6px 12px;
     background: rgba(255,255,255,0.95); border-radius: 20px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1); font-size: 11px; font-weight: 700;
     transition: all 0.3s; cursor: pointer;
+}
+.connection-indicator.admin-visible {
+    display: flex;
 }
 .connection-indicator.connected { border: 2px solid var(--success); color: var(--success); }
 .connection-indicator.disconnected { border: 2px solid var(--danger); color: var(--danger); }
@@ -214,7 +236,6 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px 15px; }
 .close-edit-modal { background: var(--gray-light); border: none; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 18px; }
 .close-edit-modal:hover { background: var(--danger); color: white; }
 
-/* ✅ Estilo para "Consultar" en el modal de detalle */
 #detailPrecio .consultar {
     font-size: 13px;
     font-weight: 600;
@@ -327,6 +348,7 @@ input[type="color"] { height: 50px; padding: 5px; cursor: pointer; background: #
 
 <div class="toast-container" id="toastContainer"></div>
 
+<!-- ✅ INDICADOR OCULTO POR DEFECTO (solo aparece en modo admin) -->
 <div class="connection-indicator disconnected" id="connectionIndicator" onclick="mostrarEstadoConexion()" title="Estado de conexión">
     <span class="dot"></span>
     <span id="connectionText">Sin conexión</span>
@@ -721,6 +743,7 @@ let IMGBB_CONFIG = {
    🔒 SEGURIDAD - BOTÓN ADMIN OCULTO POR DEFECTO
    ================================================================ */
 let adminModeActivo = false;
+let adminPanelAbierto = false; // ✅ NUEVO: controla si el panel admin está abierto
 let PIN_ADMIN = localStorage.getItem('degustase_admin_pin') || '55555';
 
 /* ================================================================
@@ -789,6 +812,18 @@ function guardarLocal() {
 /* ================================================================
    🔒 FUNCIONES DE SEGURIDAD - BOTÓN ADMIN
    ================================================================ */
+
+/* ✅ NUEVA FUNCIÓN: Controla visibilidad del indicador de conexión */
+function actualizarVisibilidadIndicador() {
+    var indicator = document.getElementById('connectionIndicator');
+    if (!indicator) return;
+    // Solo visible cuando el panel admin está abierto
+    if (adminPanelAbierto) {
+        indicator.classList.add('admin-visible');
+    } else {
+        indicator.classList.remove('admin-visible');
+    }
+}
 
 function actualizarVisibilidadBotonAdmin() {
     var container = document.getElementById('adminButtonsContainer');
@@ -1087,6 +1122,8 @@ function actualizarIndicadorConexion(estado) {
         else estadoReal = 'syncing';
     }
     indicator.className = 'connection-indicator ' + estadoReal;
+    // ✅ Solo añadir admin-visible si el panel admin está abierto
+    if (adminPanelAbierto) indicator.classList.add('admin-visible');
     switch(estadoReal) { case 'connected': text.textContent = 'Conectado'; break; case 'syncing': text.textContent = 'Conectando...'; break; case 'disconnected': text.textContent = 'Sin conexión'; break; }
 }
 
@@ -1523,7 +1560,7 @@ function guardarEdicionProducto() {
 }
 
 /* ================================================================
-   🔍 DETALLE - ✅ CORREGIDO (innerHTML en lugar de textContent)
+   🔍 DETALLE
    ================================================================ */
 function abrirDetalle(index) {
     if (index === undefined || index === null || !productos[index]) return;
@@ -1533,8 +1570,6 @@ function abrirDetalle(index) {
 
     document.getElementById('detailTitle').textContent = prod.nombre;
     document.getElementById('detailCategoria').textContent = prod.categoria;
-    
-    // ✅ CORRECCIÓN: usar innerHTML para que <span class="consultar"> se renderice correctamente
     document.getElementById('detailPrecio').innerHTML = formatearPrecio(prod.precio);
 
     detalleImagenActual = 0;
@@ -1731,12 +1766,20 @@ function abrirLogin() { document.getElementById('loginModal').style.display = 'f
 function cerrarLogin() { document.getElementById('loginModal').style.display = 'none'; document.getElementById('adminPassInput').value = ''; }
 function verificarPassword() {
     if (document.getElementById('adminPassInput').value === PIN_ADMIN) {
-        cerrarLogin(); document.getElementById('adminPanel').style.display = 'flex';
+        cerrarLogin();
+        document.getElementById('adminPanel').style.display = 'flex';
+        adminPanelAbierto = true; // ✅ Activar indicador al abrir panel
+        actualizarVisibilidadIndicador();
         document.getElementById('pinActualDisplay').textContent = PIN_ADMIN;
         actualizarEstadisticas(); actualizarPillsEstado(); renderCatalogo();
     } else { showToast("❌ PIN incorrecto", "danger"); }
 }
-function cerrarAdmin() { document.getElementById('adminPanel').style.display = 'none'; aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor); poblarInputsPersonalizacion(); renderProductos(); }
+function cerrarAdmin() {
+    document.getElementById('adminPanel').style.display = 'none';
+    adminPanelAbierto = false; // ✅ Ocultar indicador al cerrar panel
+    actualizarVisibilidadIndicador();
+    aplicarColores(tiendaConfig.primaryColor, tiendaConfig.accentColor); poblarInputsPersonalizacion(); renderProductos();
+}
 
 var TAB_TITULOS = {
     'tab-config': 'Configuración API', 'tab-sincronizacion': 'Sincronización',
@@ -1768,10 +1811,15 @@ function syncTiendaUI() {
 window.addEventListener('DOMContentLoaded', function() {
     console.log('[App] DEGUSTASE iniciando...');
     console.log('[App] 🔒 Botón Admin: OCULTO por defecto');
+    console.log('[App] 👁️ Indicador de conexión: OCULTO por defecto');
 
     // 🔒 FORZAR botón Admin OCULTO al iniciar
     adminModeActivo = false;
     actualizarVisibilidadBotonAdmin();
+
+    // 👁️ FORZAR indicador de conexión OCULTO al iniciar
+    adminPanelAbierto = false;
+    actualizarVisibilidadIndicador();
 
     // 🔐 Configurar el gesto secreto en el logo
     var brand = document.getElementById('storeNameView');
@@ -1820,3 +1868,11 @@ window.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
+
+
+              <script>
+                              
+              </script>
+                        </body>
+                        </html>
+                    
